@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all clean test test-worker
 
 all: worker coord client
 
@@ -13,3 +13,8 @@ client:
 
 clean:
 	rm -f bin/*
+
+test: test-worker
+
+test-worker:
+	go test ./worker
