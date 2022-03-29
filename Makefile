@@ -13,6 +13,7 @@ client:
 
 clean:
 	rm -f bin/*
+	go clean -testcache
 
 test: test-worker
 
