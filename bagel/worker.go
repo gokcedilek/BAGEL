@@ -1,9 +1,14 @@
 package bagel
 
 import (
+	"bytes"
+	"database/sql"
+	"encoding/gob"
 	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 	"net"
 	"net/rpc"
+	"os"
 	fchecker "project/fcheck"
 	"project/util"
 	"strings"
@@ -20,16 +25,18 @@ const (
 type Vertex struct {
 	neighbors    []Vertex
 	currentValue float64
-	messages     []Message
-	isActive     bool
-	workerAddr   string
+	//messages     []Message
+	messages   string
+	isActive   bool
+	workerAddr string
+	vertexId   uint32
 }
 
 // Message represents an arbitrary message sent during calculation
 // msgType is used to distinguish between which type of Message was sent
 type Message struct {
-	msgType        int
-	sourceVertexId int64
+	MsgType        int
+	SourceVertexId int64
 }
 
 // ShortestPathsMessage represents a message for the Shortest Paths computation
@@ -57,6 +64,21 @@ type Worker struct {
 	WorkerAddr       string
 	WorkerListenAddr string
 	coordAddr        string
+	partition        []Vertex
+}
+
+type VertexCheckpoint struct {
+	VertexId     uint32
+	CurrentValue float64
+	//Messages     []Message
+	Messages string
+	IsActive bool
+}
+
+type Checkpoint struct {
+	SuperStepNumber uint32
+	//CheckpointState []VertexCheckpoint
+	CheckpointState VertexCheckpoint
 }
 
 func NewWorker() *Worker {
@@ -77,6 +99,78 @@ func (w *Worker) startFCheckHBeat(workerId uint32) string {
 	}
 
 	return addr
+}
+
+func dbSetup() (*sql.DB, error) {
+	const createCheckpoints string = `
+	  CREATE TABLE IF NOT EXISTS checkpoints (
+	  superStepNumber INTEGER NOT NULL PRIMARY KEY,
+	  checkpointState BLOB NOT NULL
+	  );`
+	//db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	db, err := sql.Open("sqlite3", "checkpoints.db")
+	if err != nil {
+		fmt.Printf("Failed to open database: %v\n", err)
+		return nil, err
+	}
+
+	if _, err := db.Exec(createCheckpoints); err != nil {
+		fmt.Printf("Failed execute command: %v\n", err)
+		return nil, err
+	}
+
+	return db, nil
+}
+
+func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
+	db, err := dbSetup()
+	if err != nil {
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	var buf bytes.Buffer
+	if err = gob.NewEncoder(&buf).Encode(checkpoint.CheckpointState); err != nil {
+		fmt.Printf("encode error: %v\n", err)
+	}
+
+	fmt.Printf("inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes())
+
+	_, err = db.Exec("INSERT INTO checkpoints VALUES(?,?)", checkpoint.SuperStepNumber, buf.Bytes())
+	if err != nil {
+		fmt.Printf("error inserting into db: %v\n", err)
+	}
+
+	return checkpoint, nil
+}
+
+func (w *Worker) retrieveCheckpoint(superStepNumber uint32) (Checkpoint, error) {
+	db, err := dbSetup()
+	if err != nil {
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	res := db.QueryRow("SELECT * FROM checkpoints WHERE superStepNumber=?", superStepNumber)
+	checkpoint := Checkpoint{}
+	var buf []byte
+	if err := res.Scan(&checkpoint.SuperStepNumber, &buf); err == sql.ErrNoRows {
+		fmt.Printf("scan error: %v\n", err)
+		return Checkpoint{}, err
+	}
+	fmt.Printf("buf: %v\n", buf)
+	//var checkpointState []VertexCheckpoint
+	var checkpointState VertexCheckpoint
+	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
+	if err != nil {
+		fmt.Printf("decode error: %v, tmp: %v\n", err, checkpointState)
+		return Checkpoint{}, err
+	}
+	checkpoint.CheckpointState = checkpointState
+
+	fmt.Printf("read ssn: %v, state: %v\n", checkpoint.SuperStepNumber, checkpoint.CheckpointState)
+
+	return checkpoint, nil
 }
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
@@ -130,6 +224,42 @@ func (w *Worker) Start(workerId uint32, coordAddr string, workerAddr string, wor
 	wg.Add(1)
 
 	// go wait for work to do
+
+	// test sqlite
+	w.partition = []Vertex{
+		{
+			neighbors:    nil,
+			currentValue: 5,
+			messages:     "test message",
+			isActive:     true,
+			workerAddr:   "test addr",
+			vertexId:     1,
+		}, {
+			neighbors:    nil,
+			currentValue: 10,
+			messages:     "test message",
+			isActive:     true,
+			workerAddr:   "test addr 2",
+			vertexId:     2,
+		},
+	}
+	//checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: nil}
+	checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: VertexCheckpoint{}}
+	for _, v := range w.partition {
+		vertexCheckpoint := VertexCheckpoint{
+			VertexId:     v.vertexId,
+			CurrentValue: v.currentValue,
+			Messages:     v.messages,
+			IsActive:     v.isActive,
+		}
+		//checkpoint.CheckpointState = append(checkpoint.CheckpointState, vertexCheckpoint)
+		checkpoint.CheckpointState = vertexCheckpoint
+	}
+
+	fmt.Printf("checkpoint state: %v\n", checkpoint.CheckpointState)
+	w.storeCheckpoint(checkpoint)
+
+	w.retrieveCheckpoint(0)
 
 	wg.Wait()
 
