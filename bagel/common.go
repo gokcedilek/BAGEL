@@ -1,8 +1,7 @@
 package bagel
 
-type WorkerNode struct {
-	WorkerId         uint32
-	WorkerAddr       string
-	WorkerFCheckAddr string
-	// TODO: add more fields as needed
-}
+// constants are used as msgType for the messages
+const (
+	PAGE_RANK     = "PageRank"
+	SHORTEST_PATH = "ShortestPath"
+)

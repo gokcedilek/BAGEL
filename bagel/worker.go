@@ -10,12 +10,6 @@ import (
 	"sync"
 )
 
-// constants are used as msgType for the messages
-const (
-	SHORTEST_PATHS = iota + 1
-	PAGE_RANK
-)
-
 // Vertex stores intermediate calculation data about the vertex
 type Vertex struct {
 	neighbors    []Vertex
@@ -26,22 +20,18 @@ type Vertex struct {
 }
 
 // Message represents an arbitrary message sent during calculation
-// msgType is used to distinguish between which type of Message was sent
+// value has a dynamic type based on the messageType
 type Message struct {
-	msgType        int
+	messageType    string
 	sourceVertexId int64
+	value          interface{}
 }
 
-// ShortestPathsMessage represents a message for the Shortest Paths computation
-type ShortestPathsMessage struct {
-	Message
-	pathLength int
-}
-
-// PageRankMessage represents a message for the Page Rank computation
-type PageRankMessage struct {
-	Message
-	flowValue float64
+type WorkerNode struct {
+	WorkerId         uint32
+	WorkerAddr       string
+	WorkerFCheckAddr string
+	// TODO: add more fields as needed
 }
 
 type WorkerConfig struct {

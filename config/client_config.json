@@ -1,0 +1,6 @@
+{
+  "ClientId": "client1",
+  "CoordAddr": "127.0.0.1:54321",
+  "ClientAddr": "127.0.0.1:33221",
+  "ClientCoordAddr": "127.0.0.1:55441"
+}

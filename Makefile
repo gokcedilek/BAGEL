@@ -15,7 +15,5 @@ clean:
 	rm -f bin/*
 	go clean -testcache
 
-test: test-worker
-
-test-worker:
-	go test ./worker
+test:
+	go test ./bagel

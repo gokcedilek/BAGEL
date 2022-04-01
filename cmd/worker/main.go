@@ -10,14 +10,15 @@ import (
 
 func main() {
 	var config bagel.WorkerConfig
+	numWorkers := 2
 
 	workerWG := new(sync.WaitGroup)
-	workerWG.Add(1)
+	workerWG.Add(numWorkers)
 
 	workerAddr := 43460
 
 	// leaving this loop in for when we scale up number of workers
-	for i := 1; i < 3; i++ {
+	for i := 1; i <= numWorkers; i++ {
 
 		util.ReadJSONConfig(
 			fmt.Sprintf("config/worker%v_config.json", i), &config,

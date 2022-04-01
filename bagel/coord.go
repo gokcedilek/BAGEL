@@ -40,12 +40,22 @@ func NewCoord() *Coord {
 	}
 }
 
+func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
+	fmt.Printf("Coord: DoQuery: received query: %v\n", q)
+
+	reply.Query = q
+	reply.Result = -1
+
+	// return nil for no errors
+	return nil
+}
+
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
-	fmt.Printf("Coord: JoinWorker: Adding worker %d to chain\n", w.WorkerId)
+	fmt.Printf("Coord: JoinWorker: Adding worker %d\n", w.WorkerId)
 
 	c.workers = append(c.workers, w.WorkerId)
 
-	fmt.Printf("Coord: JoinWorker: Successfully added Worker %d to chain. %d Workers joined\n", w.WorkerId, len(c.workers))
+	fmt.Printf("Coord: JoinWorker: Successfully added Worker %d. %d Workers joined\n", w.WorkerId, len(c.workers))
 
 	go c.monitor(w)
 
@@ -92,6 +102,24 @@ func (c *Coord) monitor(w WorkerNode) {
 	fmt.Printf("Coord: monitor: Fcheck for Worker %d running\n", w.WorkerId)
 }
 
+func listenClients(clientAPIListenAddr string) {
+
+	wlisten, err := net.Listen("tcp", clientAPIListenAddr)
+	if err != nil {
+		fmt.Printf("Coord: listenClients: Error listening: %v\n", err)
+	}
+	fmt.Printf("Coord: listenClients: listening for clients at %v\n", clientAPIListenAddr)
+
+	for {
+		conn, err := wlisten.Accept()
+		if err != nil {
+			fmt.Printf("Coord: listenClients: Error accepting client: %v\n", err)
+		}
+		fmt.Printf("Coord: listenClients: accepted connection to client\n")
+		go rpc.ServeConn(conn) // blocks while serving connection until client hangs up
+	}
+}
+
 // Only returns when network or other unrecoverable errors occur
 func (c *Coord) Start(clientAPIListenAddr string, workerAPIListenAddr string, lostMsgsThresh uint8, checkpointSteps uint64) error {
 
@@ -106,7 +134,7 @@ func (c *Coord) Start(clientAPIListenAddr string, workerAPIListenAddr string, lo
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go listenWorkers(workerAPIListenAddr)
-	// go listenClients(clientAPIListenAddr)
+	go listenClients(clientAPIListenAddr)
 	wg.Wait()
 
 	// will never return
