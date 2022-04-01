@@ -25,31 +25,37 @@ const (
 type Vertex struct {
 	neighbors    []Vertex
 	currentValue float64
-	//messages     []Message
-	messages   string
-	isActive   bool
-	workerAddr string
-	vertexId   uint32
+	messages     []Message
+	isActive     bool
+	workerAddr   string
+	vertexId     uint32
 }
 
 // Message represents an arbitrary message sent during calculation
 // msgType is used to distinguish between which type of Message was sent
+//type Message struct {
+//	MsgType        int
+//	SourceVertexId int64
+//}
+//
+//// ShortestPathsMessage represents a message for the Shortest Paths computation
+//type ShortestPathsMessage struct {
+//	Message
+//	pathLength int
+//}
+//
+//// PageRankMessage represents a message for the Page Rank computation
+//type PageRankMessage struct {
+//	Message
+//	flowValue float64
+//}
 type Message struct {
-	MsgType        int
+	Value          int
 	SourceVertexId int64
 }
 
-// ShortestPathsMessage represents a message for the Shortest Paths computation
-type ShortestPathsMessage struct {
-	Message
-	pathLength int
-}
-
-// PageRankMessage represents a message for the Page Rank computation
-type PageRankMessage struct {
-	Message
-	flowValue float64
-}
+type ShortestPathsMessage Message
+type PageRankMessage Message
 
 type WorkerConfig struct {
 	WorkerId         uint32
@@ -70,15 +76,13 @@ type Worker struct {
 type VertexCheckpoint struct {
 	VertexId     uint32
 	CurrentValue float64
-	//Messages     []Message
-	Messages string
-	IsActive bool
+	Messages     []Message
+	IsActive     bool
 }
 
 type Checkpoint struct {
 	SuperStepNumber uint32
-	//CheckpointState []VertexCheckpoint
-	CheckpointState VertexCheckpoint
+	CheckpointState []VertexCheckpoint
 }
 
 func NewWorker() *Worker {
@@ -107,7 +111,6 @@ func dbSetup() (*sql.DB, error) {
 	  superStepNumber INTEGER NOT NULL PRIMARY KEY,
 	  checkpointState BLOB NOT NULL
 	  );`
-	//db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 	db, err := sql.Open("sqlite3", "checkpoints.db")
 	if err != nil {
 		fmt.Printf("Failed to open database: %v\n", err)
@@ -159,8 +162,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint32) (Checkpoint, error) 
 		return Checkpoint{}, err
 	}
 	fmt.Printf("buf: %v\n", buf)
-	//var checkpointState []VertexCheckpoint
-	var checkpointState VertexCheckpoint
+	var checkpointState []VertexCheckpoint
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
 		fmt.Printf("decode error: %v, tmp: %v\n", err, checkpointState)
@@ -230,21 +232,24 @@ func (w *Worker) Start(workerId uint32, coordAddr string, workerAddr string, wor
 		{
 			neighbors:    nil,
 			currentValue: 5,
-			messages:     "test message",
-			isActive:     true,
-			workerAddr:   "test addr",
-			vertexId:     1,
+			messages: []Message{{
+				Value: 10, SourceVertexId: 2}, {
+				Value: 10, SourceVertexId: 2}},
+			isActive:   true,
+			workerAddr: "test addr",
+			vertexId:   1,
 		}, {
 			neighbors:    nil,
 			currentValue: 10,
-			messages:     "test message",
-			isActive:     true,
-			workerAddr:   "test addr 2",
-			vertexId:     2,
+			messages: []Message{{
+				Value: 15, SourceVertexId: 1}, {
+				Value: 15, SourceVertexId: 1}},
+			isActive:   true,
+			workerAddr: "test addr 2",
+			vertexId:   2,
 		},
 	}
-	//checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: nil}
-	checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: VertexCheckpoint{}}
+	checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: nil}
 	for _, v := range w.partition {
 		vertexCheckpoint := VertexCheckpoint{
 			VertexId:     v.vertexId,
@@ -252,14 +257,14 @@ func (w *Worker) Start(workerId uint32, coordAddr string, workerAddr string, wor
 			Messages:     v.messages,
 			IsActive:     v.isActive,
 		}
-		//checkpoint.CheckpointState = append(checkpoint.CheckpointState, vertexCheckpoint)
-		checkpoint.CheckpointState = vertexCheckpoint
+		checkpoint.CheckpointState = append(checkpoint.CheckpointState, vertexCheckpoint)
 	}
 
-	fmt.Printf("checkpoint state: %v\n", checkpoint.CheckpointState)
-	w.storeCheckpoint(checkpoint)
+	checkpoint, err = w.storeCheckpoint(checkpoint)
+	fmt.Printf("stored checkpoint: %v\n", checkpoint)
 
-	w.retrieveCheckpoint(0)
+	checkpoint, err = w.retrieveCheckpoint(0)
+	fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
 
 	wg.Wait()
 
