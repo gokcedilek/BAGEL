@@ -1,6 +1,7 @@
 {
   "WorkerId": 1,
-  "CoordAddr": "127.0.0.1:12345",
+  "CoordAddr": "127.0.0.1:12333",
   "WorkerAddr": "127.0.0.1:11111",
-  "WorkerListenAddr": "127.0.0.1:11112"
+  "WorkerListenAddr": "127.0.0.1:11112",
+  "FCheckAckLocalAddress": ":54345"
 }

@@ -1,23 +1,14 @@
 package bagel
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/rpc"
 	fchecker "project/fcheck"
 	"project/util"
-	"strings"
 	"sync"
 )
-
-// Vertex stores intermediate calculation data about the vertex
-type Vertex struct {
-	neighbors    []Vertex
-	currentValue float64
-	messages     []Message
-	isActive     bool
-	workerAddr   string
-}
 
 // Message represents an arbitrary message sent during calculation
 // value has a dynamic type based on the messageType
@@ -35,32 +26,41 @@ type WorkerNode struct {
 }
 
 type WorkerConfig struct {
-	WorkerId         uint32
-	CoordAddr        string
-	WorkerAddr       string
-	WorkerListenAddr string
+	WorkerId              uint32
+	CoordAddr             string
+	WorkerAddr            string
+	WorkerListenAddr      string
+	FCheckAckLocalAddress string
 }
 
 type Worker struct {
 	// Worker state may go here
-	WorkerId         uint32
-	WorkerAddr       string
-	WorkerListenAddr string
-	coordAddr        string
+	WorkerId              uint32
+	WorkerAddr            string
+	WorkerListenAddr      string
+	CoordAddr             string
+	FCheckAckLocalAddress string
 }
 
-func NewWorker() *Worker {
-	return &Worker{}
+func NewWorker(config WorkerConfig) *Worker {
+	return &Worker{
+		WorkerId:              config.WorkerId,
+		WorkerAddr:            config.WorkerAddr,
+		WorkerListenAddr:      config.WorkerListenAddr,
+		CoordAddr:             config.CoordAddr,
+		FCheckAckLocalAddress: config.FCheckAckLocalAddress,
+	}
 }
 
-func (w *Worker) startFCheckHBeat(workerId uint32) string {
-	fmt.Printf("Starting fcheck for %d\n", workerId)
+func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
+	fmt.Printf("Starting fcheck for worker %d\n", workerId)
 
-	//hBeatLocalAddr, err := net.ResolveUDPAddr("udp", strings.Split(s.WorkerListenAddr, ":")[0]+":0")
-	//util.CheckErr(err, fmt.Sprintf("Worker %d heartbeat on %v", WorkerId, hBeatLocalAddr))
+	fcheckConfig := fchecker.StartStruct{
+		AckLocalIPAckLocalPort: ackAddress,
+	}
 
-	_, addr, err := fchecker.Start(fchecker.StartStruct{strings.Split(w.WorkerListenAddr, ":")[0] + ":0", 0,
-		"", "", 0, workerId})
+	_, addr, err := fchecker.Start(fcheckConfig)
+
 	if err != nil {
 		fchecker.Stop()
 		util.CheckErr(err, fmt.Sprintf("fchecker for Worker %d failed", workerId))
@@ -83,6 +83,7 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 }
 
 // create a new RPC Worker instance for the current Worker
+/*
 func (w *Worker) register() {
 	handler := rpc.NewServer()
 	err := handler.Register(w)
@@ -90,31 +91,34 @@ func (w *Worker) register() {
 
 	go w.listenCoord(handler)
 }
+*/
 
-func (w *Worker) Start(workerId uint32, coordAddr string, workerAddr string, workerListenAddr string) error {
+func (w *Worker) Start() error {
 	// set Worker state
-	w.WorkerId = workerId
-	w.WorkerListenAddr = workerListenAddr
+	if w.WorkerAddr == "" {
+		return errors.New("Failed to start worker. Please initialize worker before calling Start")
+	}
 
 	// connect to the coord node
-	conn, err := util.DialTCPCustom(workerAddr, coordAddr)
+	conn, err := util.DialTCPCustom(w.WorkerListenAddr, w.CoordAddr)
+	util.CheckErr(err, fmt.Sprintf("Worker %d failed to Dial Coordinator - %s\n", w.WorkerId, w.CoordAddr))
 
 	defer conn.Close()
 	coordClient := rpc.NewClient(conn)
 
-	hBeatAddr := w.startFCheckHBeat(workerId)
-	fmt.Printf("hBeatAddr for Worker %d is %v\n", workerId, hBeatAddr)
+	hBeatAddr := w.startFCheckHBeat(w.WorkerId, w.FCheckAckLocalAddress)
+	fmt.Printf("hBeatAddr for Worker %d is %v\n", w.WorkerId, hBeatAddr)
 
 	workerNode := WorkerNode{w.WorkerId, w.WorkerAddr, hBeatAddr}
 
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
-	util.CheckErr(err, fmt.Sprintf("Worker %v could not join Worker\n", workerId))
+	util.CheckErr(err, fmt.Sprintf("Worker %v could not join\n", w.WorkerId))
 
 	// register Worker for RPC
-	w.register()
+	// w.register()
 
-	fmt.Printf("Worker: Start: worker %v joined to coord successfully\n", workerId)
+	fmt.Printf("Worker: Start: worker %v joined to coord successfully\n", w.WorkerId)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -123,5 +127,9 @@ func (w *Worker) Start(workerId uint32, coordAddr string, workerAddr string, wor
 
 	wg.Wait()
 
+	return nil
+}
+
+func (w *Worker) SampleRPC(args Message, resp *Message) error {
 	return nil
 }
