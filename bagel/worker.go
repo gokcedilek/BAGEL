@@ -21,14 +21,20 @@ const (
 	PAGE_RANK
 )
 
+const SUPERSTEPNUMBER = 0
+
+type NeighbourVertex struct {
+	vertexId uint64
+}
+
 // Vertex stores intermediate calculation data about the vertex
 type Vertex struct {
-	neighbors    []Vertex
+	neighbors    []NeighbourVertex
 	currentValue float64
 	messages     []Message
 	isActive     bool
 	workerAddr   string
-	vertexId     uint32
+	vertexId     uint64
 }
 
 // Message represents an arbitrary message sent during calculation
@@ -50,8 +56,8 @@ type Vertex struct {
 //	flowValue float64
 //}
 type Message struct {
-	Value          int
-	SourceVertexId int64
+	Value          uint64
+	SourceVertexId uint64
 }
 
 type ShortestPathsMessage Message
@@ -71,10 +77,11 @@ type Worker struct {
 	WorkerListenAddr string
 	coordAddr        string
 	partition        []Vertex
+	SuperStepNumber  uint32
 }
 
 type VertexCheckpoint struct {
-	VertexId     uint32
+	//VertexId     uint64
 	CurrentValue float64
 	Messages     []Message
 	IsActive     bool
@@ -82,7 +89,8 @@ type VertexCheckpoint struct {
 
 type Checkpoint struct {
 	SuperStepNumber uint32
-	CheckpointState []VertexCheckpoint
+	//CheckpointState []VertexCheckpoint
+	CheckpointState map[uint64]VertexCheckpoint
 }
 
 func NewWorker() *Worker {
@@ -144,6 +152,14 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		fmt.Printf("error inserting into db: %v\n", err)
 	}
 
+	// notify coord about the latest checkpoint saved
+	coordClient, err := util.DialRPC(w.coordAddr)
+	util.CheckErr(err, fmt.Sprintf("worker %v could not dial coord addr %v\n", w.WorkerAddr, w.coordAddr))
+
+	var msg CheckpointMsg
+	err = coordClient.Call("Coord.UpdateCheckpoint", checkpoint, &msg)
+	util.CheckErr(err, fmt.Sprintf("worker %v could not call UpdateCheckpoint", w.WorkerAddr))
+
 	return checkpoint, nil
 }
 
@@ -162,7 +178,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint32) (Checkpoint, error) 
 		return Checkpoint{}, err
 	}
 	fmt.Printf("buf: %v\n", buf)
-	var checkpointState []VertexCheckpoint
+	var checkpointState map[uint64]VertexCheckpoint
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
 		fmt.Printf("decode error: %v, tmp: %v\n", err, checkpointState)
@@ -173,6 +189,28 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint32) (Checkpoint, error) 
 	fmt.Printf("read ssn: %v, state: %v\n", checkpoint.SuperStepNumber, checkpoint.CheckpointState)
 
 	return checkpoint, nil
+}
+
+func (w *Worker) RevertToLastCheckpoint(req CheckpointMsg, reply *Checkpoint) error {
+	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
+	if err != nil {
+		fmt.Printf("error retrieving checkpoint: %v\n", err)
+		return err
+	}
+	fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
+
+	w.SuperStepNumber = checkpoint.SuperStepNumber
+	for _, v := range w.partition {
+		if state, found := checkpoint.CheckpointState[v.vertexId]; found {
+			fmt.Printf("found state: %v\n", state)
+			v.currentValue = state.CurrentValue
+			v.isActive = state.IsActive
+			v.messages = state.Messages
+		}
+	}
+	// TODO: call compute wrapper with new superstep #
+	*reply = checkpoint
+	return nil
 }
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
@@ -201,6 +239,7 @@ func (w *Worker) Start(workerId uint32, coordAddr string, workerAddr string, wor
 	// set Worker state
 	w.WorkerId = workerId
 	w.WorkerListenAddr = workerListenAddr
+	w.coordAddr = coordAddr
 
 	// connect to the coord node
 	conn, err := util.DialTCPCustom(workerAddr, coordAddr)
@@ -249,15 +288,16 @@ func (w *Worker) Start(workerId uint32, coordAddr string, workerAddr string, wor
 			vertexId:   2,
 		},
 	}
-	checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: nil}
+	checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint)}
 	for _, v := range w.partition {
 		vertexCheckpoint := VertexCheckpoint{
-			VertexId:     v.vertexId,
+			//VertexId:     v.vertexId,
 			CurrentValue: v.currentValue,
 			Messages:     v.messages,
 			IsActive:     v.isActive,
 		}
-		checkpoint.CheckpointState = append(checkpoint.CheckpointState, vertexCheckpoint)
+		//checkpoint.CheckpointState = append(checkpoint.CheckpointState, vertexCheckpoint)
+		checkpoint.CheckpointState[v.vertexId] = vertexCheckpoint
 	}
 
 	checkpoint, err = w.storeCheckpoint(checkpoint)

@@ -29,7 +29,8 @@ type Coord struct {
 	workerAPIListenAddr string
 	lostMsgsThresh      uint8
 
-	workers []uint32 // list of active worker ids
+	workers         []uint32 // list of active worker ids
+	superStepNumber uint32
 }
 
 func NewCoord() *Coord {
@@ -39,6 +40,8 @@ func NewCoord() *Coord {
 		lostMsgsThresh:      0,
 	}
 }
+
+//func (c *Coord) ReceiveCheckpoint()
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	fmt.Printf("Coord: JoinWorker: Adding worker %d to chain\n", w.WorkerId)

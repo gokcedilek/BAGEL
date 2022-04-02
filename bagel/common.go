@@ -6,3 +6,7 @@ type WorkerNode struct {
 	WorkerFCheckAddr string
 	// TODO: add more fields as needed
 }
+
+type CheckpointMsg struct {
+	SuperStepNumber uint32
+}
