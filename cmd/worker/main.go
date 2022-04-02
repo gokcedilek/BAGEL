@@ -25,11 +25,9 @@ func main() {
 		)
 		fmt.Sprintf("worker id: %v\n", config.WorkerId)
 
-		worker := bagel.NewWorker()
+		worker := bagel.NewWorker(config)
 
-		go worker.Start(
-			config.WorkerId, config.CoordAddr,
-			fmt.Sprintf("127.0.0.1:%v", workerAddr) /*config.workerAddr*/, config.WorkerListenAddr)
+		go worker.Start()
 		workerAddr++
 		time.Sleep(2 * time.Second)
 	}
