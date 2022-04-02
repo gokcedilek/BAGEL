@@ -1,6 +1,6 @@
 {
   "WorkerId": 2,
-  "CoordAddr": "127.0.0.1:12345",
+  "CoordAddr": "127.0.0.1:12333",
   "WorkerAddr": "127.0.0.1:22222",
   "WorkerListenAddr": "127.0.0.1:22223"
 }
