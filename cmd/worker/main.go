@@ -18,7 +18,11 @@ func main() {
 	workerAddr := 43460
 
 	// leaving this loop in for when we scale up number of workers
+<<<<<<< HEAD
 	for i := 1; i <= numWorkers; i++ {
+=======
+	for i := 1; i < 2; i++ {
+>>>>>>> bc8c6b25bece03cfd5d3b74e8bcd12026ff90245
 
 		util.ReadJSONConfig(
 			fmt.Sprintf("config/worker%v_config.json", i), &config,

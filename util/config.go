@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"net/rpc"
 	"os"
 )
 
@@ -49,4 +50,12 @@ func DialTCPCustom(localAddr string, remoteAddr string) (*net.TCPConn, error) {
 	// TODO !!! remove for final submission
 	err = conn.SetLinger(0)
 	return conn, err
+}
+
+func DialRPC(address string) (*rpc.Client, error) {
+	conn, err := DialTCPCustom("", address)
+	if err != nil {
+		return nil, err
+	}
+	return rpc.NewClient(conn), err
 }
