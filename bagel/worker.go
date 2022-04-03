@@ -14,7 +14,9 @@ import (
 // value has a dynamic type based on the messageType
 type Message struct {
 	messageType    string
-	sourceVertexId int64
+	superStepNum   uint64
+	sourceVertexId uint64
+	destVertexId   uint64
 	value          interface{}
 }
 
@@ -40,6 +42,16 @@ type Worker struct {
 	WorkerListenAddr      string
 	CoordAddr             string
 	FCheckAckLocalAddress string
+	SuperStep             SuperStep
+	Vertices              []Vertex
+}
+
+type SuperStep struct {
+	Id           uint64
+	QueryType    string
+	Messages     []Message
+	Outgoing     map[uint32]uint64
+	IsCheckpoint bool
 }
 
 func NewWorker(config WorkerConfig) *Worker {
@@ -49,6 +61,12 @@ func NewWorker(config WorkerConfig) *Worker {
 		WorkerListenAddr:      config.WorkerListenAddr,
 		CoordAddr:             config.CoordAddr,
 		FCheckAckLocalAddress: config.FCheckAckLocalAddress,
+		SuperStep: SuperStep{
+			Id:           0,
+			Messages:     nil,
+			Outgoing:     nil,
+			IsCheckpoint: false,
+		},
 	}
 }
 
@@ -130,6 +148,42 @@ func (w *Worker) Start() error {
 	return nil
 }
 
+func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
+	// todo flag to indicate SS or use Superstep # to recover?
+
+	if args.Id != w.SuperStep.Id+1 {
+		// todo this is recovery
+	}
+	// resume after recovery
+
+	for _, vertex := range w.Vertices {
+		messageMap := vertex.Compute()
+		w.updateMessageMap(messageMap)
+	}
+
+	if args.IsCheckpoint {
+		// todo checkpoint
+	}
+
+	resp = &w.SuperStep
+	return nil
+}
+
 func (w *Worker) SampleRPC(args Message, resp *Message) error {
 	return nil
+}
+
+// todo should this be RPC?
+func (w *Worker) ReceiveWorkerMessages(args Message, resp *Message) error {
+	if w.SuperStep.Id+1 != args.superStepNum {
+		return nil // ignore msgs not for next superstep
+	}
+
+	return nil
+}
+
+func (w *Worker) updateMessageMap(msgMap map[uint32]uint64) {
+	for worker, numMessages := range msgMap {
+		w.SuperStep.Outgoing[worker] += numMessages
+	}
 }
