@@ -18,7 +18,6 @@ import (
 // Message represents an arbitrary message sent during calculation
 // value has a dynamic type based on the messageType
 type Message struct {
-	messageType    string
 	superStepNum   uint64
 	sourceVertexId uint64
 	destVertexId   uint64
@@ -35,13 +34,9 @@ type WorkerConfig struct {
 
 type Worker struct {
 	// Worker state may go here
-	WorkerId              uint32
-	WorkerAddr            string
-	WorkerListenAddr      string
-	CoordAddr             string
-	FCheckAckLocalAddress string
-	SuperStep             SuperStep
-	Vertices              []Vertex
+	config    WorkerConfig
+	SuperStep SuperStep
+	Vertices  []Vertex
 }
 
 type Checkpoint struct {
@@ -59,17 +54,14 @@ type SuperStep struct {
 
 func NewWorker(config WorkerConfig) *Worker {
 	return &Worker{
-		WorkerId:              config.WorkerId,
-		WorkerAddr:            config.WorkerAddr,
-		WorkerListenAddr:      config.WorkerListenAddr,
-		CoordAddr:             config.CoordAddr,
-		FCheckAckLocalAddress: config.FCheckAckLocalAddress,
+		config: config,
 		SuperStep: SuperStep{
 			Id:           0,
 			Messages:     nil,
 			Outgoing:     nil,
 			IsCheckpoint: false,
 		},
+		Vertices: make([]Vertex, 0, 128),
 	}
 }
 
@@ -130,18 +122,19 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	fmt.Printf("inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes())
 
 	// notify coord about the latest checkpoint saved
-	coordClient, err := util.DialRPC(w.CoordAddr)
-	util.CheckErr(err, fmt.Sprintf("worker %v could not dial coord addr %v\n", w.WorkerAddr, w.CoordAddr))
+	coordClient, err := util.DialRPC(w.config.CoordAddr)
+	util.CheckErr(err, fmt.Sprintf("worker %v could not dial coord addr %v\n", w.config.WorkerAddr,
+		w.config.CoordAddr))
 
 	checkpointMsg := CheckpointMsg{
 		SuperStepNumber: checkpoint.SuperStepNumber,
-		WorkerId:        w.WorkerId,
+		WorkerId:        w.config.WorkerId,
 	}
 
 	var reply CheckpointMsg
 	fmt.Printf("calling coord update cp: %v\n", checkpointMsg)
 	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
-	util.CheckErr(err, fmt.Sprintf("worker %v could not call UpdateCheckpoint", w.WorkerAddr))
+	util.CheckErr(err, fmt.Sprintf("worker %v could not call UpdateCheckpoint", w.config.WorkerAddr))
 
 	fmt.Printf("called coord update cp: %v\n", reply)
 
@@ -199,14 +192,15 @@ func (w *Worker) RevertToLastCheckpoint(req CheckpointMsg, reply *Checkpoint) er
 }
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
-	listenAddr, err := net.ResolveTCPAddr("tcp", w.WorkerListenAddr)
-	util.CheckErr(err, fmt.Sprintf("Worker %v could not resolve WorkerListenAddr: %v", w.WorkerId, w.WorkerListenAddr))
+	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.WorkerListenAddr)
+	util.CheckErr(err, fmt.Sprintf("Worker %v could not resolve WorkerListenAddr: %v", w.config.WorkerId,
+		w.config.WorkerListenAddr))
 	listen, err := net.ListenTCP("tcp", listenAddr)
-	util.CheckErr(err, fmt.Sprintf("Worker %v could not listen on listenAddr: %v", w.WorkerId, listenAddr))
+	util.CheckErr(err, fmt.Sprintf("Worker %v could not listen on listenAddr: %v", w.config.WorkerId, listenAddr))
 
 	for {
 		conn, err := listen.Accept()
-		util.CheckErr(err, fmt.Sprintf("Worker %v could not accept connections\n", w.WorkerId))
+		util.CheckErr(err, fmt.Sprintf("Worker %v could not accept connections\n", w.config.WorkerId))
 		go handler.ServeConn(conn)
 	}
 }
@@ -224,30 +218,30 @@ func (w *Worker) register() {
 
 func (w *Worker) Start() error {
 	// set Worker state
-	if w.WorkerAddr == "" {
+	if w.config.WorkerAddr == "" {
 		return errors.New("Failed to start worker. Please initialize worker before calling Start")
 	}
 
 	// connect to the coord node
-	conn, err := util.DialTCPCustom(w.WorkerListenAddr, w.CoordAddr)
-	util.CheckErr(err, fmt.Sprintf("Worker %d failed to Dial Coordinator - %s\n", w.WorkerId, w.CoordAddr))
+	conn, err := util.DialTCPCustom(w.config.WorkerListenAddr, w.config.CoordAddr)
+	util.CheckErr(err, fmt.Sprintf("Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId, w.config.CoordAddr))
 
 	defer conn.Close()
 	coordClient := rpc.NewClient(conn)
 
-	hBeatAddr := w.startFCheckHBeat(w.WorkerId, w.FCheckAckLocalAddress)
-	fmt.Printf("hBeatAddr for Worker %d is %v\n", w.WorkerId, hBeatAddr)
+	hBeatAddr := w.startFCheckHBeat(w.config.WorkerId, w.config.FCheckAckLocalAddress)
+	fmt.Printf("hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr)
 
-	workerNode := WorkerNode{w.WorkerId, w.WorkerAddr, hBeatAddr}
+	workerNode := WorkerNode{w.config.WorkerId, w.config.WorkerAddr, hBeatAddr}
 
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
-	util.CheckErr(err, fmt.Sprintf("Worker %v could not join\n", w.WorkerId))
+	util.CheckErr(err, fmt.Sprintf("Worker %v could not join\n", w.config.WorkerId))
 
 	// register Worker for RPC
 	// w.register()
 
-	fmt.Printf("Worker: Start: worker %v joined to coord successfully\n", w.WorkerId)
+	fmt.Printf("Worker: Start: worker %v joined to coord successfully\n", w.config.WorkerId)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
