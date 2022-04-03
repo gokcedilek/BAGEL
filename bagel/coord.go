@@ -29,8 +29,9 @@ type Coord struct {
 	workerAPIListenAddr string
 	lostMsgsThresh      uint8
 
-	workers         []uint32 // list of active worker ids
-	superStepNumber uint32
+	workers            []uint32 // list of active worker ids
+	superStepNumber    uint32
+	workerToCheckpoint map[uint32]uint32
 }
 
 func NewCoord() *Coord {
@@ -38,10 +39,32 @@ func NewCoord() *Coord {
 		clientAPIListenAddr: "",
 		workerAPIListenAddr: "",
 		lostMsgsThresh:      0,
+		workerToCheckpoint:  make(map[uint32]uint32),
 	}
 }
 
-//func (c *Coord) ReceiveCheckpoint()
+func (c *Coord) UpdateCheckpoint(msg CheckpointMsg, reply *CheckpointMsg) error {
+	fmt.Printf("called update checkpoint with msg: %v\n", msg)
+	// save the last superstep # checkpointed by this worker
+	c.workerToCheckpoint[msg.WorkerId] = msg.SuperStepNumber
+
+	// update global superstep # if needed
+	allWorkersUpdated := true
+	for _, v := range c.workerToCheckpoint {
+		if v != msg.SuperStepNumber {
+			allWorkersUpdated = false
+			break
+		}
+	}
+	fmt.Printf("coord checkpoints map: %v\n", c.workerToCheckpoint)
+
+	if allWorkersUpdated {
+		c.superStepNumber = msg.SuperStepNumber
+	}
+
+	*reply = msg
+	return nil
+}
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	fmt.Printf("Coord: JoinWorker: Adding worker %d to chain\n", w.WorkerId)

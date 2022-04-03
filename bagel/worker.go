@@ -145,20 +145,27 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		fmt.Printf("encode error: %v\n", err)
 	}
 
-	fmt.Printf("inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes())
-
 	_, err = db.Exec("INSERT INTO checkpoints VALUES(?,?)", checkpoint.SuperStepNumber, buf.Bytes())
 	if err != nil {
 		fmt.Printf("error inserting into db: %v\n", err)
 	}
+	fmt.Printf("inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes())
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.coordAddr)
 	util.CheckErr(err, fmt.Sprintf("worker %v could not dial coord addr %v\n", w.WorkerAddr, w.coordAddr))
 
-	var msg CheckpointMsg
-	err = coordClient.Call("Coord.UpdateCheckpoint", checkpoint, &msg)
+	checkpointMsg := CheckpointMsg{
+		SuperStepNumber: checkpoint.SuperStepNumber,
+		WorkerId:        w.WorkerId,
+	}
+
+	var reply CheckpointMsg
+	fmt.Printf("calling coord update cp: %v\n", checkpointMsg)
+	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
 	util.CheckErr(err, fmt.Sprintf("worker %v could not call UpdateCheckpoint", w.WorkerAddr))
+
+	fmt.Printf("called coord update cp: %v\n", reply)
 
 	return checkpoint, nil
 }

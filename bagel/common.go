@@ -9,4 +9,5 @@ type WorkerNode struct {
 
 type CheckpointMsg struct {
 	SuperStepNumber uint32
+	WorkerId        uint32
 }
