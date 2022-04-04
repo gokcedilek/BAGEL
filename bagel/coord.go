@@ -30,8 +30,8 @@ type Coord struct {
 	lostMsgsThresh      uint8
 
 	workers            []uint32 // list of active worker ids
-	superStepNumber    uint32
-	workerToCheckpoint map[uint32]uint32
+	superStepNumber    uint64
+	workerToCheckpoint map[uint32]uint64
 }
 
 func NewCoord() *Coord {
@@ -39,11 +39,10 @@ func NewCoord() *Coord {
 		clientAPIListenAddr: "",
 		workerAPIListenAddr: "",
 		lostMsgsThresh:      0,
-		workerToCheckpoint:  make(map[uint32]uint32),
+		workerToCheckpoint:  make(map[uint32]uint64),
 	}
 }
 
-<<<<<<< HEAD
 func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 	fmt.Printf("Coord: DoQuery: received query: %v\n", q)
 
@@ -51,7 +50,9 @@ func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 	reply.Result = -1
 
 	// return nil for no errors
-=======
+	return nil
+}
+
 func (c *Coord) UpdateCheckpoint(msg CheckpointMsg, reply *CheckpointMsg) error {
 	fmt.Printf("called update checkpoint with msg: %v\n", msg)
 	// save the last superstep # checkpointed by this worker
@@ -72,7 +73,6 @@ func (c *Coord) UpdateCheckpoint(msg CheckpointMsg, reply *CheckpointMsg) error 
 	}
 
 	*reply = msg
->>>>>>> bc8c6b25bece03cfd5d3b74e8bcd12026ff90245
 	return nil
 }
 
