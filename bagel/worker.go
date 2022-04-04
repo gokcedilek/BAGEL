@@ -38,7 +38,7 @@ type Worker struct {
 	// Worker state may go here
 	config    WorkerConfig
 	SuperStep SuperStep
-	Vertices  []Vertex
+	Vertices  map[uint64]Vertex
 }
 
 type Checkpoint struct {
@@ -63,7 +63,7 @@ func NewWorker(config WorkerConfig) *Worker {
 			Outgoing:     nil,
 			IsCheckpoint: false,
 		},
-		Vertices: make([]Vertex, 0, 128),
+		Vertices: make(map[uint64]Vertex),
 	}
 }
 
@@ -94,37 +94,62 @@ func (w *Worker) StartQuery(
 		"worker %v connecting to db from %v\n", w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
-	//db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
-	//defer db.Close()
-	//
-	//if err != nil {
-	//	fmt.Printf("error connecting to mysql: %v\n", err)
-	//	*reply = nil
-	//	return err
-	//}
-	//
-	//result, err := db.Query(
-	//	"SELECT * from graph where srcVertex % ? = ?",
-	//	startSuperStep.NumWorkers, w.config.WorkerId,
-	//)
-	//if err != nil {
-	//	fmt.Printf("error running query: %v\n", err)
-	//	*reply = nil
-	//	return err
-	//}
-	//
-	//var pairs []VertexPair
-	//for result.Next() {
-	//	var pair VertexPair
-	//
-	//	err = result.Scan(&pair.srcId, &pair.destId)
-	//	if err != nil {
-	//		fmt.Printf("scan error: %v\n", err)
-	//	}
-	//	pairs = append(pairs, pair)
-	//}
-	//
-	//fmt.Printf("all pairs: %v\n", pairs)
+	db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
+	defer db.Close()
+
+	if err != nil {
+		fmt.Printf("error connecting to mysql: %v\n", err)
+		*reply = nil
+		return err
+	}
+
+	result, err := db.Query(
+		"SELECT * from graph where srcVertex % ? = ?",
+		startSuperStep.NumWorkers, w.config.WorkerId,
+	)
+	if err != nil {
+		fmt.Printf("error running query: %v\n", err)
+		*reply = nil
+		return err
+	}
+
+	var pairs []VertexPair
+	for result.Next() {
+		var pair VertexPair
+
+		err = result.Scan(&pair.srcId, &pair.destId)
+		if err != nil {
+			fmt.Printf("scan error: %v\n", err)
+		}
+
+		// add vertex to worker state
+		if vertex, ok := w.Vertices[pair.srcId]; ok {
+			vertex.neighbors = append(
+				vertex.neighbors,
+				NeighbourVertex{
+					vertexId: pair.
+						destId,
+				},
+			)
+			w.Vertices[pair.srcId] = vertex
+		} else {
+			pianoVertex := Vertex{
+				Id:           pair.srcId,
+				neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
+				currentValue: 0,
+				messages:     nil,
+				isActive:     false,
+				workerAddr:   w.config.WorkerAddr,
+				Superstep:    0,
+			}
+			w.Vertices[pair.srcId] = pianoVertex
+		}
+		pairs = append(pairs, pair)
+		fmt.Printf("pairs: %v\n", pairs)
+	}
+
+	fmt.Printf("vertices of worker: %v\n", w.Vertices)
+
 	return nil
 }
 
