@@ -3,7 +3,7 @@ package bagel
 // Vertex stores intermediate calculation data about the vertex
 type Vertex struct {
 	Id           uint64
-	neighbors    []Vertex
+	neighbors    []NeighbourVertex
 	currentValue float64
 	messages     []Message
 	isActive     bool
@@ -19,6 +19,11 @@ type VertexCheckpoint struct {
 
 type NeighbourVertex struct {
 	vertexId uint64
+}
+
+type VertexPair struct {
+	srcId  uint64
+	destId uint64
 }
 
 func NewVertex() *Vertex {

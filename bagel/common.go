@@ -13,6 +13,10 @@ type WorkerNode struct {
 	// TODO: add more fields as needed
 }
 
+type StartSuperStep struct {
+	NumWorkers uint8
+}
+
 type CheckpointMsg struct {
 	SuperStepNumber uint64
 	WorkerId        uint32

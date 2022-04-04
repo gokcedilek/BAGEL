@@ -2,6 +2,7 @@ package bagel
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/rpc"
@@ -65,13 +66,16 @@ func (c *GraphClient) doQuery(query Query) {
 		log.Printf("Client: sendQuery: error calling Coord.DoQuery:  %v\n", err)
 	}
 
+	fmt.Printf("client received result: %v\n", result)
 	c.notifyCh <- result
 }
 
 // Start Currently based on kvslib from A3
 // If there is an issue with connecting to the coord, this should return an appropriate err value
 // otherwise err should be set to nil
-func (c *GraphClient) Start(clientId string, coordAddr string, clientAddr string) (chan QueryResult, error) {
+func (c *GraphClient) Start(
+	clientId string, coordAddr string, clientAddr string,
+) (chan QueryResult, error) {
 	log.Printf("Client: Start\n")
 
 	// set up client state
