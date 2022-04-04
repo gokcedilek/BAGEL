@@ -323,6 +323,7 @@ func (w *Worker) Start() error {
 */
 
 func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
+	w.forwardMsgToVertices()
 
 	for _, vertex := range w.Vertices {
 		messageMap := vertex.Compute()
@@ -331,11 +332,18 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
-		w.storeCheckpoint(checkpoint)
+		_, err := w.storeCheckpoint(checkpoint)
+		util.CheckErr(err, fmt.Sprintf("Worker %v failed to checkpoint # %v\n", w.config.WorkerId, w.SuperStep.Id))
 	}
 
 	resp = &w.SuperStep
 	return nil
+}
+
+func (w *Worker) forwardMsgToVertices() {
+	for vId, v := range w.Vertices {
+		v.messages = w.NextSuperStep.Messages[vId]
+	}
 }
 
 func (w *Worker) ReceiveMessages(args Message, resp *Message) error {
