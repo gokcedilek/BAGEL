@@ -364,17 +364,13 @@ func (w *Worker) handleSuperStepDone() error {
 }
 
 func (w *Worker) sendSuperStepDone() error {
-	raddr, err := net.ResolveTCPAddr("tcp", w.config.CoordAddr)
-	util.CheckErr(err, fmt.Sprintf("Failed to resolve coord address %d\n"), w.config.WorkerId)
 
-	conn, err := net.DialTCP("tcp", nil, raddr)
-	util.CheckErr(err, fmt.Sprintf("Failed to establish TCP connection with coord: %v\n", w.config.CoordAddr))
-
-	defer conn.Close()
+	client, err := util.DialRPC(w.config.CoordAddr)
+	util.CheckErr(err, fmt.Sprintf("Failed to establish connection with coord %v\n", w.config.CoordAddr))
+	defer client.Close()
 
 	var resp SuperStepDone
 
-	client := rpc.NewClient(conn)
 	// Todo determine coord RPC func method
 	err = client.Call("Coord.SuperStepDone", w.SuperStep, &resp)
 	return err
