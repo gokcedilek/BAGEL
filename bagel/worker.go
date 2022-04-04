@@ -288,15 +288,16 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 }
 
 // create a new RPC Worker instance for the current Worker
-/*
+
 func (w *Worker) register() {
 	handler := rpc.NewServer()
 	err := handler.Register(w)
-	fmt.Printf("register: Worker %v - register error: %v\n", w.WorkerId, err)
+	fmt.Printf(
+		"register: Worker %v - register error: %v\n", w.config.WorkerId, err,
+	)
 
 	go w.listenCoord(handler)
 }
-*/
 
 func (w *Worker) Start() error {
 	// set Worker state
@@ -323,7 +324,10 @@ func (w *Worker) Start() error {
 	)
 	fmt.Printf("hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr)
 
-	workerNode := WorkerNode{w.config.WorkerId, w.config.WorkerAddr, hBeatAddr}
+	workerNode := WorkerNode{
+		w.config.WorkerId, w.config.WorkerAddr,
+		hBeatAddr, w.config.WorkerListenAddr,
+	}
 
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
@@ -332,7 +336,7 @@ func (w *Worker) Start() error {
 	)
 
 	// register Worker for RPC
-	//w.register()
+	w.register()
 
 	fmt.Printf(
 		"Worker: Start: worker %v joined to coord successfully\n",

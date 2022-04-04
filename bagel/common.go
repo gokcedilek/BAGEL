@@ -10,7 +10,7 @@ type WorkerNode struct {
 	WorkerId         uint32
 	WorkerAddr       string
 	WorkerFCheckAddr string
-	// TODO: add more fields as needed
+	WorkerListenAddr string
 }
 
 type StartSuperStep struct {

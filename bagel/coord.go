@@ -58,7 +58,7 @@ func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 		wClient, err := util.DialRPC(wAddr)
 		util.CheckErr(
 			err, fmt.Sprintf(
-				"coord could not dial worker addr %v\n", wAddr,
+				"coord could not dial worker addr %v, err: %v\n", wAddr, err,
 			),
 		)
 		startSuperStep := StartSuperStep{NumWorkers: uint8(len(workers))}
@@ -66,8 +66,8 @@ func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 		err = wClient.Call("Worker.StartQuery", startSuperStep, &result)
 		util.CheckErr(
 			err, fmt.Sprintf(
-				"coord %v could not call start query",
-				wAddr,
+				"coord %v could not call start query, err: %v",
+				wAddr, err,
 			),
 		)
 	}
@@ -109,7 +109,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 
 	c.workersMutex.Lock()
 	//c.workers = append(c.workers, w.WorkerId)
-	c.workers[w.WorkerId] = w.WorkerAddr
+	c.workers[w.WorkerId] = w.WorkerListenAddr
 	c.workersMutex.Unlock()
 
 	fmt.Printf(
