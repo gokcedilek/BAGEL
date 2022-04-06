@@ -28,12 +28,12 @@ type Coord struct {
 	clientAPIListenAddr string
 	workerAPIListenAddr string
 	lostMsgsThresh      uint8
-
-	//workers            []uint32 // list of active worker ids
-	workers            map[uint32]string // worker id --> worker address
-	workersMutex       sync.Mutex
-	superStepNumber    uint64
-	workerToCheckpoint map[uint32]uint64
+	workers             map[uint32]string // worker id --> worker address
+	workersMutex        sync.Mutex
+	superStepNumber     uint64
+	workerToCheckpoint  map[uint32]uint64
+	workerCounter       uint32
+	workerCounterMutex  sync.Mutex
 }
 
 func NewCoord() *Coord {
@@ -54,7 +54,8 @@ func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 	workers := c.workers
 	c.workersMutex.Unlock()
 
-	for _, wAddr := range workers {
+	done := make(chan *rpc.Call, len(workers))
+	for wId, wAddr := range workers {
 		wClient, err := util.DialRPC(wAddr)
 		util.CheckErr(
 			err, fmt.Sprintf(
@@ -63,7 +64,14 @@ func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 		)
 		startSuperStep := StartSuperStep{NumWorkers: uint8(len(workers))}
 		var result interface{}
-		err = wClient.Call("Worker.StartQuery", startSuperStep, &result)
+		//err = wClient.Call("Worker.StartQuery", startSuperStep, &result)
+
+		wClient.Go(
+			"Worker.StartQuery", startSuperStep, &result,
+			done,
+		)
+		fmt.Printf("called startquery for worker %v\n", wId)
+		go c.checkWorkerReady(done) // increment counter for coord
 		util.CheckErr(
 			err, fmt.Sprintf(
 				"coord %v could not call start query, err: %v",
@@ -77,6 +85,17 @@ func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 
 	// return nil for no errors
 	return nil
+}
+
+func (c *Coord) checkWorkerReady(done <-chan *rpc.Call) {
+	call := <-done
+
+	fmt.Printf("received reply: %v\n", call)
+
+	if call.Error != nil {
+		fmt.Printf("received error: %v\n", call.Error)
+	}
+
 }
 
 func (c *Coord) UpdateCheckpoint(

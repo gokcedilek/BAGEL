@@ -10,7 +10,7 @@ import (
 
 func main() {
 	var config bagel.WorkerConfig
-	numWorkers := 2
+	numWorkers := 3
 
 	workerWG := new(sync.WaitGroup)
 	workerWG.Add(numWorkers)
