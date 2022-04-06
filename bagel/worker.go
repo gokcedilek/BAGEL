@@ -153,7 +153,7 @@ func (w *Worker) StartQuery(
 	return nil
 }
 
-func dbSetup() (*sql.DB, error) {
+func checkpointsSetup() (*sql.DB, error) {
 	//goland:noinspection SqlDialectInspection
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
@@ -175,7 +175,7 @@ func dbSetup() (*sql.DB, error) {
 }
 
 func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
-	db, err := dbSetup()
+	db, err := checkpointsSetup()
 	if err != nil {
 		os.Exit(1)
 	}
@@ -228,7 +228,7 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	Checkpoint, error,
 ) {
-	db, err := dbSetup()
+	db, err := checkpointsSetup()
 	if err != nil {
 		os.Exit(1)
 	}
@@ -371,110 +371,11 @@ func (w *Worker) Start() error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	// test sqlite
-	//w.Vertices = []Vertex{
-	//	{
-	//		neighbors:    nil,
-	//		currentValue: 5,
-	//		messages: []Message{
-	//			{
-	//				Value: 10, SourceVertexId: 2,
-	//			}, {
-	//				Value: 10, SourceVertexId: 2,
-	//			},
-	//		},
-	//		isActive:   true,
-	//		workerAddr: "test addr",
-	//		Id:         1,
-	//	}, {
-	//		neighbors:    nil,
-	//		currentValue: 10,
-	//		messages: []Message{
-	//			{
-	//				Value: 15, SourceVertexId: 1,
-	//			}, {
-	//				Value: 15, SourceVertexId: 1,
-	//			},
-	//		},
-	//		isActive:   true,
-	//		workerAddr: "test addr 2",
-	//		Id:         2,
-	//	},
-	//}
-	//checkpoint := Checkpoint{
-	//	SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
-	//}
-	//for _, v := range w.Vertices {
-	//	vertexCheckpoint := VertexCheckpoint{
-	//		//VertexId:     v.vertexId,
-	//		CurrentValue: v.currentValue,
-	//		Messages:     v.messages,
-	//		IsActive:     v.isActive,
-	//	}
-	//	//checkpoint.CheckpointState = append(checkpoint.CheckpointState, vertexCheckpoint)
-	//	checkpoint.CheckpointState[v.Id] = vertexCheckpoint
-	//}
-	//
-	//checkpoint, err = w.storeCheckpoint(checkpoint)
-	//fmt.Printf("stored checkpoint: %v\n", checkpoint)
-	//
-	//checkpoint, err = w.retrieveCheckpoint(0)
-	//fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
-
-	//w.StartQuery()
-
 	// go wait for work to do
 	wg.Wait()
 
 	return nil
 }
-
-/*
-	// test sqlite
-	w.partition = []Vertex{
-		{
-			neighbors:    nil,
-			currentValue: 5,
-			messages: []Message{{
-				Value: 10, SourceVertexId: 2}, {
-				Value: 10, SourceVertexId: 2}},
-			isActive:   true,
-			workerAddr: "test addr",
-			vertexId:   1,
-		}, {
-			neighbors:    nil,
-			currentValue: 10,
-			messages: []Message{{
-				Value: 15, SourceVertexId: 1}, {
-				Value: 15, SourceVertexId: 1}},
-			isActive:   true,
-			workerAddr: "test addr 2",
-			vertexId:   2,
-		},
-	}
-	checkpoint := Checkpoint{SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint)}
-	for _, v := range w.partition {
-		vertexCheckpoint := VertexCheckpoint{
-			//VertexId:     v.vertexId,
-			CurrentValue: v.currentValue,
-			Messages:     v.messages,
-			IsActive:     v.isActive,
-		}
-		//checkpoint.CheckpointState = append(checkpoint.CheckpointState, vertexCheckpoint)
-		checkpoint.CheckpointState[v.vertexId] = vertexCheckpoint
-	}
-
-	checkpoint, err = w.storeCheckpoint(checkpoint)
-	fmt.Printf("stored checkpoint: %v\n", checkpoint)
-
-	checkpoint, err = w.retrieveCheckpoint(0)
-	fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
-
-	wg.Wait()
-
-	return nil
-}
-*/
 
 func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 	// todo flag to indicate SS or use Superstep # to recover?

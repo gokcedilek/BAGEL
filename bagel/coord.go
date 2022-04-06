@@ -32,7 +32,7 @@ type Coord struct {
 	workersMutex        sync.Mutex
 	superStepNumber     uint64
 	workerToCheckpoint  map[uint32]uint64
-	workerCounter       uint32
+	workerCounter       int
 	workerCounterMutex  sync.Mutex
 }
 
@@ -46,39 +46,45 @@ func NewCoord() *Coord {
 	}
 }
 
-func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
-	fmt.Printf("Coord: DoQuery: received query: %v\n", q)
+// this is the start of the query where coord notifies workers to initialize
+// state for superstep 0
+func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
+	fmt.Printf("Coord: StartQuery: received query: %v\n", q)
 
-	// call workers query handler
+	// TODO: should not be needed when we disallow workers joining during
+	// computation
 	c.workersMutex.Lock()
 	workers := c.workers
 	c.workersMutex.Unlock()
 
-	done := make(chan *rpc.Call, len(workers))
-	for wId, wAddr := range workers {
+	// call workers query handler
+	workerDone := make(chan *rpc.Call, len(workers))
+	allWorkersReady := make(chan bool, 1)
+
+	for _, wAddr := range workers {
 		wClient, err := util.DialRPC(wAddr)
-		util.CheckErr(
-			err, fmt.Sprintf(
+		if err != nil {
+			fmt.Printf(
 				"coord could not dial worker addr %v, err: %v\n", wAddr, err,
-			),
-		)
+			)
+		}
+
 		startSuperStep := StartSuperStep{NumWorkers: uint8(len(workers))}
 		var result interface{}
-		//err = wClient.Call("Worker.StartQuery", startSuperStep, &result)
 
 		wClient.Go(
 			"Worker.StartQuery", startSuperStep, &result,
-			done,
+			workerDone,
 		)
-		fmt.Printf("called startquery for worker %v\n", wId)
-		go c.checkWorkerReady(done) // increment counter for coord
-		util.CheckErr(
-			err, fmt.Sprintf(
-				"coord %v could not call start query, err: %v",
-				wAddr, err,
-			),
-		)
+		go c.checkWorkersReady(workerDone, allWorkersReady)
 	}
+
+	select {
+	case <-allWorkersReady:
+		fmt.Println("received all workers ready!")
+	}
+
+	// TODO: invoke another function to handle the rest of the request
 
 	reply.Query = q
 	reply.Result = -1
@@ -87,15 +93,27 @@ func (c *Coord) DoQuery(q Query, reply *QueryResult) error {
 	return nil
 }
 
-func (c *Coord) checkWorkerReady(done <-chan *rpc.Call) {
-	call := <-done
+// check if all workers are ready to start superstep 0
+func (c *Coord) checkWorkersReady(
+	workerDone <-chan *rpc.Call,
+	allWorkersReady chan<- bool,
+) {
+	call := <-workerDone
 
-	fmt.Printf("received reply: %v\n", call)
+	fmt.Printf("received reply: %v\n", call.Reply)
 
 	if call.Error != nil {
 		fmt.Printf("received error: %v\n", call.Error)
 	}
 
+	c.workerCounterMutex.Lock()
+	defer c.workerCounterMutex.Unlock()
+
+	c.workerCounter++
+	if c.workerCounter == len(c.workers) {
+		fmt.Println("sending all workers ready!")
+		allWorkersReady <- true
+	}
 }
 
 func (c *Coord) UpdateCheckpoint(
@@ -126,8 +144,10 @@ func (c *Coord) UpdateCheckpoint(
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	fmt.Printf("Coord: JoinWorker: Adding worker %d\n", w.WorkerId)
 
+	// TODO: needs to block while there is an ongoing query (
+	// so we don't need workerMutex)
+
 	c.workersMutex.Lock()
-	//c.workers = append(c.workers, w.WorkerId)
 	c.workers[w.WorkerId] = w.WorkerListenAddr
 	c.workersMutex.Unlock()
 
@@ -136,7 +156,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		w.WorkerId, len(c.workers),
 	)
 
-	//go c.monitor(w)
+	go c.monitor(w)
 
 	// return nil for no errors
 	return nil

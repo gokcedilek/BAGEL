@@ -61,7 +61,7 @@ func (c *GraphClient) SendQuery(query Query) error {
 func (c *GraphClient) doQuery(query Query) {
 	var result QueryResult
 	// TODO: implement timeout? or retry behavior? or stop handling?
-	err := c.coordClient.Call("Coord.DoQuery", query, &result)
+	err := c.coordClient.Call("Coord.StartQuery", query, &result)
 	if err != nil {
 		log.Printf("Client: sendQuery: error calling Coord.DoQuery:  %v\n", err)
 	}
