@@ -357,9 +357,12 @@ func (w *Worker) Start() error {
 		return errors.New("Failed to start worker. Please initialize worker before calling Start")
 	}
 
+	// register Worker for RPC
+	w.register()
+
 	// connect to the coord node
 	conn, err := util.DialTCPCustom(
-		w.config.WorkerListenAddr, w.config.CoordAddr,
+		w.config.WorkerAddr, w.config.CoordAddr,
 	)
 	util.CheckErr(
 		err, fmt.Sprintf(
@@ -386,9 +389,6 @@ func (w *Worker) Start() error {
 	util.CheckErr(
 		err, fmt.Sprintf("Worker %v could not join\n", w.config.WorkerId),
 	)
-
-	// register Worker for RPC
-	w.register()
 
 	fmt.Printf(
 		"Worker: Start: worker %v joined to coord successfully\n",
@@ -465,7 +465,8 @@ func (w *Worker) sendSuperStepDone() error {
 	client, err := util.DialRPC(w.config.CoordAddr)
 	util.CheckErr(
 		err, fmt.Sprintf(
-			"Failed to establish connection with coord %v\n", w.config.CoordAddr,
+			"Failed to establish connection with coord %v\n",
+			w.config.CoordAddr,
 		),
 	)
 	defer client.Close()

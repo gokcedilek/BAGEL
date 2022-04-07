@@ -28,27 +28,30 @@ type Coord struct {
 	clientAPIListenAddr string
 	workerAPIListenAddr string
 	lostMsgsThresh      uint8
-	workers             map[uint32]string // worker id --> worker address
-	workersMutex        sync.Mutex
-	superStepNumber     uint64
-	workerToCheckpoint  map[uint32]uint64
-	workerCounter       int
-	workerCounterMutex  sync.Mutex
+	//workers               map[uint32]string // worker id --> worker address
+	workers               map[uint32]*rpc.Client
+	workersMutex          sync.Mutex
+	superStepNumber       uint64
+	lastWorkerCheckpoints map[uint32]uint64
+	workerCounter         int
+	workerCounterMutex    sync.Mutex
 }
 
 func NewCoord() *Coord {
 	return &Coord{
-		clientAPIListenAddr: "",
-		workerAPIListenAddr: "",
-		lostMsgsThresh:      0,
-		workerToCheckpoint:  make(map[uint32]uint64),
-		workers:             make(map[uint32]string),
+		clientAPIListenAddr:   "",
+		workerAPIListenAddr:   "",
+		lostMsgsThresh:        0,
+		lastWorkerCheckpoints: make(map[uint32]uint64),
+		workers:               make(map[uint32]*rpc.Client),
 	}
 }
 
 // this is the start of the query where coord notifies workers to initialize
 // state for superstep 0
 func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
+	// TODO: if a query is received while another one is being processed,
+	// we need to put it in a pending queue
 	fmt.Printf("Coord: StartQuery: received query: %v\n", q)
 
 	// TODO: should not be needed when we disallow workers joining during
@@ -58,20 +61,12 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	c.workersMutex.Unlock()
 
 	// call workers query handler
+	startSuperStep := StartSuperStep{NumWorkers: uint8(len(workers))}
 	workerDone := make(chan *rpc.Call, len(workers))
 	allWorkersReady := make(chan bool, 1)
 
-	for _, wAddr := range workers {
-		wClient, err := util.DialRPC(wAddr)
-		if err != nil {
-			fmt.Printf(
-				"coord could not dial worker addr %v, err: %v\n", wAddr, err,
-			)
-		}
-
-		startSuperStep := StartSuperStep{NumWorkers: uint8(len(workers))}
+	for _, wClient := range workers {
 		var result interface{}
-
 		wClient.Go(
 			"Worker.StartQuery", startSuperStep, &result,
 			workerDone,
@@ -121,17 +116,17 @@ func (c *Coord) UpdateCheckpoint(
 ) error {
 	fmt.Printf("called update checkpoint with msg: %v\n", msg)
 	// save the last superstep # checkpointed by this worker
-	c.workerToCheckpoint[msg.WorkerId] = msg.SuperStepNumber
+	c.lastWorkerCheckpoints[msg.WorkerId] = msg.SuperStepNumber
 
 	// update global superstep # if needed
 	allWorkersUpdated := true
-	for _, v := range c.workerToCheckpoint {
+	for _, v := range c.lastWorkerCheckpoints {
 		if v != msg.SuperStepNumber {
 			allWorkersUpdated = false
 			break
 		}
 	}
-	fmt.Printf("coord checkpoints map: %v\n", c.workerToCheckpoint)
+	fmt.Printf("coord checkpoints map: %v\n", c.lastWorkerCheckpoints)
 
 	if allWorkersUpdated {
 		c.superStepNumber = msg.SuperStepNumber
@@ -144,11 +139,19 @@ func (c *Coord) UpdateCheckpoint(
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	fmt.Printf("Coord: JoinWorker: Adding worker %d\n", w.WorkerId)
 
-	// TODO: needs to block while there is an ongoing query (
-	// so we don't need workerMutex)
+	// TODO: needs to block while there is an ongoing query
+
+	client, err := util.DialRPC(w.WorkerListenAddr)
+	if err != nil {
+		fmt.Printf(
+			"coord could not dial worker addr %v, err: %v\n",
+			w.WorkerListenAddr, err,
+		)
+		return err
+	}
 
 	c.workersMutex.Lock()
-	c.workers[w.WorkerId] = w.WorkerListenAddr
+	c.workers[w.WorkerId] = client
 	c.workersMutex.Unlock()
 
 	fmt.Printf(
