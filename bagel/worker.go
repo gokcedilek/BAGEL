@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	db_util "project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
@@ -95,7 +96,7 @@ func (w *Worker) StartQuery(
 		"worker %v connecting to db from %v\n", w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
-	db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
+	db, err := db_util.connectToDb()
 	defer db.Close()
 
 	if err != nil {
@@ -105,7 +106,7 @@ func (w *Worker) StartQuery(
 	}
 
 	result, err := db.Query(
-		"SELECT * from graph where srcVertex % ? = ?",
+		"SELECT * from "+db_util.tableName+" where srcVertex % ? = ?",
 		startSuperStep.NumWorkers, w.config.WorkerId,
 	)
 	if err != nil {

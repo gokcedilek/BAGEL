@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
 	_ "github.com/denisenkom/go-mssqldb"
 )
@@ -20,18 +21,20 @@ var tableName = "graph"
 var server = "bagel.database.windows.net"
 var port = 1433
 var user = "user"
-var password = ""
+var password = "Distributedgraph!"
 var database = "Graph_Backup_DB"
 
 func main() {
-	n, err := getNode(0)
+	start := time.Now()
+	n, err := GetNode(0)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Node found: %v", n)
+	elapsed := time.Since(start)
+	fmt.Printf("Found node: %v in %s\n", n, elapsed)
 }
 
-func connectToDb() error {
+func connectToDb() (*sql.DB, error) {
 	// Build connection string
 	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;",
 		server, user, password, port, database)
@@ -40,13 +43,13 @@ func connectToDb() error {
 	db, err = sql.Open("sqlserver", connString)
 	if err != nil {
 		log.Fatal("Error creating connection pool: ", err.Error())
-		return err
+		return nil, err
 	}
-	return nil
+	return db, nil
 }
 
-func getNode(id int) (*Node, error) {
-	err := connectToDb()
+func GetNode(id int) (*Node, error) {
+	_, err := connectToDb()
 	if err != nil {
 		panic(err)
 	}
