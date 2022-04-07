@@ -10,7 +10,11 @@ type WorkerNode struct {
 	WorkerId         uint32
 	WorkerAddr       string
 	WorkerFCheckAddr string
-	// TODO: add more fields as needed
+	WorkerListenAddr string
+}
+
+type StartSuperStep struct {
+	NumWorkers uint8
 }
 
 type CheckpointMsg struct {
