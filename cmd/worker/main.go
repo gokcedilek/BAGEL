@@ -2,35 +2,47 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"project/bagel"
 	"project/util"
+	"strconv"
 	"sync"
-	"time"
 )
 
 func main() {
 	var config bagel.WorkerConfig
-	numWorkers := 3
 
 	workerWG := new(sync.WaitGroup)
-	workerWG.Add(numWorkers)
+	workerWG.Add(1)
 
-	workerAddr := 43460
+	invalidInput := false
+	workerId := 0
 
-	// leaving this loop in for when we scale up number of workers
-	for i := 1; i <= numWorkers; i++ {
-
-		util.ReadJSONConfig(
-			fmt.Sprintf("config/worker%v_config.json", i), &config,
-		)
-		fmt.Sprintf("worker id: %v\n", config.WorkerId)
-
-		worker := bagel.NewWorker(config)
-
-		go worker.Start()
-		workerAddr++
-		time.Sleep(2 * time.Second)
+	if len(os.Args) != 2 {
+		invalidInput = true
+	} else {
+		id, err := strconv.Atoi(os.Args[1])
+		if err != nil {
+			log.Println("Provided worker id could not be converted to integer")
+			invalidInput = true
+		} else {
+			workerId = id
+		}
 	}
 
+	if invalidInput {
+		log.Println("Usage: ./bin/worker [workerId]")
+		return
+	}
+
+	util.ReadJSONConfig(
+		fmt.Sprintf("config/worker%v_config.json", workerId), &config,
+	)
+	fmt.Sprintf("worker id: %v\n", config.WorkerId)
+
+	worker := bagel.NewWorker(config)
+
+	go worker.Start()
 	workerWG.Wait()
 }
