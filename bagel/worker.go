@@ -36,9 +36,10 @@ type WorkerConfig struct {
 
 type Worker struct {
 	// Worker state may go here
-	config    WorkerConfig
-	SuperStep SuperStep
-	Vertices  map[uint64]Vertex
+	config        WorkerConfig
+	SuperStep     SuperStep
+	NextSuperStep SuperStep
+	Vertices      map[uint64]Vertex
 }
 
 type Checkpoint struct {
@@ -49,7 +50,7 @@ type Checkpoint struct {
 type SuperStep struct {
 	Id           uint64
 	QueryType    string
-	Messages     []Message
+	Messages     map[uint64][]Message
 	Outgoing     map[uint32]uint64
 	IsCheckpoint bool
 }
@@ -174,6 +175,23 @@ func checkpointsSetup() (*sql.DB, error) {
 	return db, nil
 }
 
+func (w *Worker) checkpoint() Checkpoint {
+	checkPointState := make(map[uint64]VertexCheckpoint)
+
+	for k, v := range w.Vertices {
+		checkPointState[k] = VertexCheckpoint{
+			CurrentValue: v.currentValue,
+			Messages:     v.messages,
+			IsActive:     v.isActive,
+		}
+	}
+
+	return Checkpoint{
+		SuperStepNumber: w.SuperStep.Id,
+		CheckpointState: checkPointState,
+	}
+}
+
 func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	db, err := checkpointsSetup()
 	if err != nil {
@@ -262,27 +280,36 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	return checkpoint, nil
 }
 
-//func (w *Worker) RevertToLastCheckpoint(req CheckpointMsg, reply *Checkpoint) error {
-//	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
-//	if err != nil {
-//		fmt.Printf("error retrieving checkpoint: %v\n", err)
-//		return err
-//	}
-//	fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
-//
-//	w.SuperStep.Id = checkpoint.SuperStepNumber
-//	for _, v := range w.Vertices {
-//		if state, found := checkpoint.CheckpointState[v.Id]; found {
-//			fmt.Printf("found state: %v\n", state)
-//			v.currentValue = state.CurrentValue
-//			v.isActive = state.IsActive
-//			v.messages = state.Messages
-//		}
-//	}
-//	// TODO: call compute wrapper with new superstep #
-//	*reply = checkpoint
-//	return nil
-//}
+func (w *Worker) RevertToLastCheckpoint(
+	req CheckpointMsg, reply *Checkpoint,
+) error {
+	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
+	if err != nil {
+		fmt.Printf("error retrieving checkpoint: %v\n", err)
+		return err
+	}
+	fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
+
+	w.SuperStep.Id = checkpoint.SuperStepNumber
+	for k, v := range w.Vertices {
+		if state, found := checkpoint.CheckpointState[v.Id]; found {
+			fmt.Printf("found state: %v\n", state)
+			v.currentValue = state.CurrentValue
+			v.isActive = state.IsActive
+			v.messages = state.Messages
+			w.Vertices[k] = v
+		}
+	}
+	// TODO: call compute wrapper with new superstep #
+	/*
+		@author Ryan:
+			1) Coord -> Workers to recover to checkpoint S
+			2) Workers respond (ie. all recovered checkpoint)
+			3) Coord -> Workers proceed to Computer SS #(S + 1)
+	*/
+	*reply = checkpoint
+	return nil
+}
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
 	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.WorkerListenAddr)
@@ -378,12 +405,7 @@ func (w *Worker) Start() error {
 }
 
 func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
-	// todo flag to indicate SS or use Superstep # to recover?
-
-	if args.Id != w.SuperStep.Id+1 {
-		// todo this is recovery
-	}
-	// resume after recovery
+	w.forwardMsgToVertices()
 
 	for _, vertex := range w.Vertices {
 		messageMap := vertex.Compute()
@@ -391,21 +413,69 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 	}
 
 	if args.IsCheckpoint {
-		// todo checkpoint
+		checkpoint := w.checkpoint()
+		_, err := w.storeCheckpoint(checkpoint)
+		util.CheckErr(
+			err, fmt.Sprintf(
+				"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
+				w.SuperStep.Id,
+			),
+		)
 	}
 
 	resp = &w.SuperStep
 	return nil
 }
 
-// todo should this be RPC?
-//func (w *Worker) ReceiveWorkerMessages(args Message, resp *Message) error {
-//	if w.SuperStep.Id+1 != args.superStepNum {
-//		return nil // ignore msgs not for next superstep
-//	}
-//
-//	return nil
-//}
+func (w *Worker) forwardMsgToVertices() {
+	for vId, v := range w.Vertices {
+		v.messages = w.NextSuperStep.Messages[vId]
+	}
+}
+
+func (w *Worker) ReceiveMessages(args Message, resp *Message) error {
+	if w.SuperStep.Id+1 != args.SuperStepNum {
+		return nil // ignore msgs not for next superstep
+	}
+
+	w.NextSuperStep.Messages[args.DestVertexId] =
+		append(w.NextSuperStep.Messages[args.DestVertexId], args)
+	resp = &args
+	return nil
+}
+
+func (w *Worker) handleSuperStepDone() error {
+	fmt.Printf(
+		"Worker %v transitioning from superstep # %d to superstep # %d\n",
+		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
+	)
+	err := w.sendSuperStepDone()
+
+	if err != nil {
+		return err
+	}
+
+	w.SuperStep = w.NextSuperStep
+	w.NextSuperStep = SuperStep{}
+	return nil
+}
+
+func (w *Worker) sendSuperStepDone() error {
+
+	client, err := util.DialRPC(w.config.CoordAddr)
+	util.CheckErr(
+		err, fmt.Sprintf(
+			"Failed to establish connection with coord %v\n", w.config.CoordAddr,
+		),
+	)
+	defer client.Close()
+
+	var resp SuperStepDone
+
+	// Todo determine coord RPC func method
+	err = client.Call("Coord.SuperStepDone", w.SuperStep, &resp)
+	return err
+}
 
 func (w *Worker) updateMessageMap(msgMap map[uint32]uint64) {
 	for worker, numMessages := range msgMap {
