@@ -12,6 +12,7 @@ import (
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
@@ -95,61 +96,64 @@ func (w *Worker) StartQuery(
 		"worker %v connecting to db from %v\n", w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
-	db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
-	defer db.Close()
+	time.Sleep(time.Second * 2)
+	/*
+		db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
+		defer db.Close()
 
-	if err != nil {
-		fmt.Printf("error connecting to mysql: %v\n", err)
-		*reply = nil
-		return err
-	}
-
-	result, err := db.Query(
-		"SELECT * from graph where srcVertex % ? = ?",
-		startSuperStep.NumWorkers, w.config.WorkerId,
-	)
-	if err != nil {
-		fmt.Printf("error running query: %v\n", err)
-		*reply = nil
-		return err
-	}
-
-	var pairs []VertexPair
-	for result.Next() {
-		var pair VertexPair
-
-		err = result.Scan(&pair.srcId, &pair.destId)
 		if err != nil {
-			fmt.Printf("scan error: %v\n", err)
+			fmt.Printf("error connecting to mysql: %v\n", err)
+			*reply = nil
+			return err
 		}
 
-		// add vertex to worker state
-		if vertex, ok := w.Vertices[pair.srcId]; ok {
-			vertex.neighbors = append(
-				vertex.neighbors,
-				NeighbourVertex{
-					vertexId: pair.
-						destId,
-				},
-			)
-			w.Vertices[pair.srcId] = vertex
-		} else {
-			pianoVertex := Vertex{
-				Id:           pair.srcId,
-				neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
-				currentValue: 0,
-				messages:     nil,
-				isActive:     false,
-				workerAddr:   w.config.WorkerAddr,
-				Superstep:    0,
+		result, err := db.Query(
+			"SELECT * from graph where srcVertex % ? = ?",
+			startSuperStep.NumWorkers, w.config.WorkerId,
+		)
+		if err != nil {
+			fmt.Printf("error running query: %v\n", err)
+			*reply = nil
+			return err
+		}
+
+		var pairs []VertexPair
+		for result.Next() {
+			var pair VertexPair
+
+			err = result.Scan(&pair.srcId, &pair.destId)
+			if err != nil {
+				fmt.Printf("scan error: %v\n", err)
 			}
-			w.Vertices[pair.srcId] = pianoVertex
-		}
-		pairs = append(pairs, pair)
-		fmt.Printf("pairs: %v\n", pairs)
-	}
 
-	fmt.Printf("vertices of worker: %v\n", w.Vertices)
+			// add vertex to worker state
+			if vertex, ok := w.Vertices[pair.srcId]; ok {
+				vertex.neighbors = append(
+					vertex.neighbors,
+					NeighbourVertex{
+						vertexId: pair.
+							destId,
+					},
+				)
+				w.Vertices[pair.srcId] = vertex
+			} else {
+				pianoVertex := Vertex{
+					Id:           pair.srcId,
+					neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
+					currentValue: 0,
+					messages:     nil,
+					isActive:     false,
+					workerAddr:   w.config.WorkerAddr,
+					Superstep:    0,
+				}
+				w.Vertices[pair.srcId] = pianoVertex
+			}
+			pairs = append(pairs, pair)
+			fmt.Printf("pairs: %v\n", pairs)
+		}
+
+		fmt.Printf("vertices of worker: %v\n", w.Vertices)
+	*/
 
 	return nil
 }
@@ -158,7 +162,7 @@ func checkpointsSetup() (*sql.DB, error) {
 	//goland:noinspection SqlDialectInspection
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
-	  superStepNumber INTEGER NOT NULL PRIMARY KEY,
+	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY,
 	  checkpointState BLOB NOT NULL
 	  );`
 	db, err := sql.Open("sqlite3", "checkpoints.db")
@@ -215,6 +219,7 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		"inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes(),
 	)
 
+	// TODO: test this!
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
 	util.CheckErr(
@@ -253,7 +258,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	defer db.Close()
 
 	res := db.QueryRow(
-		"SELECT * FROM checkpoints WHERE superStepNumber=?", superStepNumber,
+		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?", superStepNumber,
 	)
 	checkpoint := Checkpoint{}
 	var buf []byte
@@ -281,25 +286,30 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 }
 
 func (w *Worker) RevertToLastCheckpoint(
-	req CheckpointMsg, reply *Checkpoint,
+	req RestartSuperStep, reply *interface{},
 ) error {
-	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
-	if err != nil {
-		fmt.Printf("error retrieving checkpoint: %v\n", err)
-		return err
-	}
-	fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
-
-	w.SuperStep.Id = checkpoint.SuperStepNumber
-	for k, v := range w.Vertices {
-		if state, found := checkpoint.CheckpointState[v.Id]; found {
-			fmt.Printf("found state: %v\n", state)
-			v.currentValue = state.CurrentValue
-			v.isActive = state.IsActive
-			v.messages = state.Messages
-			w.Vertices[k] = v
-		}
-	}
+	fmt.Printf("worker %v received %v\n", w.config.WorkerId, req)
+	//checkpoint := Checkpoint{
+	//	SuperStepNumber: 0,
+	//	CheckpointState: nil,
+	//}
+	//checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
+	//if err != nil {
+	//	fmt.Printf("error retrieving checkpoint: %v\n", err)
+	//	return err
+	//}
+	//fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
+	//
+	//w.SuperStep.Id = checkpoint.SuperStepNumber
+	//for k, v := range w.Vertices {
+	//	if state, found := checkpoint.CheckpointState[v.Id]; found {
+	//		fmt.Printf("found state: %v\n", state)
+	//		v.currentValue = state.CurrentValue
+	//		v.isActive = state.IsActive
+	//		v.messages = state.Messages
+	//		w.Vertices[k] = v
+	//	}
+	//}
 	// TODO: call compute wrapper with new superstep #
 	/*
 		@author Ryan:
@@ -307,7 +317,8 @@ func (w *Worker) RevertToLastCheckpoint(
 			2) Workers respond (ie. all recovered checkpoint)
 			3) Coord -> Workers proceed to Computer SS #(S + 1)
 	*/
-	*reply = checkpoint
+	//*reply = checkpoint
+	*reply = nil
 	return nil
 }
 
@@ -429,7 +440,7 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 
 func (w *Worker) forwardMsgToVertices() {
 	for vId, v := range w.Vertices {
-		v.messages = w.NextSuperStep.Messages[vId]
+		v.messages = w.NextSuperStep.Messages[vId] // what about remote vertices?
 	}
 }
 
