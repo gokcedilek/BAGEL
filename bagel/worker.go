@@ -408,8 +408,8 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 	w.forwardMsgToVertices()
 
 	for _, vertex := range w.Vertices {
-		messageMap := vertex.Compute()
-		w.updateMessageMap(messageMap)
+		messages := vertex.Compute()
+		w.updateMessageMap(messages)
 	}
 
 	if args.IsCheckpoint {
@@ -422,6 +422,8 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 			),
 		)
 	}
+
+	// todo send out messages to other workers here
 
 	resp = &w.SuperStep
 	return nil
@@ -478,8 +480,15 @@ func (w *Worker) sendSuperStepDone() error {
 	return err
 }
 
-func (w *Worker) updateMessageMap(msgMap map[uint32]uint64) {
-	for worker, numMessages := range msgMap {
-		w.SuperStep.Outgoing[worker] += numMessages
+func (w *Worker) getVertexPartition(vertexId uint64) uint32 {
+	// need hash function and number of workers
+	// 		should this state be separate from the Worker? (ie. should only coord be aware)
+	return 0
+}
+
+func (w *Worker) updateMessageMap(msgs []Message) {
+	for _, msg := range msgs {
+		destWorker := w.getVertexPartition(msg.DestVertexId)
+		w.SuperStep.Outgoing[destWorker] += 1
 	}
 }

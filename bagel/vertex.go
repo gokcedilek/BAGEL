@@ -33,6 +33,6 @@ func NewVertex() *Vertex {
 type ShortestPathVertex Vertex
 type PageRankVertex Vertex
 
-func (v *Vertex) Compute() map[uint32]uint64 {
+func (v *Vertex) Compute() []Message {
 	return nil // stub
 }

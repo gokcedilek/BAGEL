@@ -21,3 +21,5 @@ type CheckpointMsg struct {
 	SuperStepNumber uint64
 	WorkerId        uint32
 }
+
+type WorkerAddressBook map[uint32]string
