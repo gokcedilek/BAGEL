@@ -459,12 +459,8 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 		var unused Message
 		err := w.workerDirectory[worker].Call("Worker.PutBatchedMessages", batch, &unused)
 		if err != nil {
-			fmt.Println(
-				fmt.Sprintf(
-					"worker %v could not send messages to worker: %v",
-					w.config.WorkerId, worker,
-				),
-			)
+			fmt.Printf("worker %v could not send messages to worker: %v\n",
+				w.config.WorkerId, worker)
 		}
 	}
 
@@ -472,10 +468,8 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 	err := w.handleSuperStepDone()
 
 	if err != nil {
-		fmt.Println(
-			fmt.Sprintf("worker %v could not complete superstep # %v",
-				w.config.WorkerId, w.SuperStep.Id),
-		)
+		fmt.Printf("worker %v could not complete superstep # %v\n",
+			w.config.WorkerId, w.SuperStep.Id)
 	}
 
 	return nil
@@ -535,8 +529,4 @@ func (w *Worker) updateMessagesMap(msgs []Message) {
 		destWorker := msg.DestHash % uint64(w.NumWorkers)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
-}
-
-func (w *Worker) getVertexPartition(vertexId uint64) uint32 {
-	return uint32(vertexId % uint64(w.NumWorkers))
 }

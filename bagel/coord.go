@@ -170,11 +170,7 @@ func (c *Coord) Compute() error {
 	// TODO check if all workers are finished
 	for i := 0; i < 5; i++ {
 
-		shouldCheckPoint := false
-
-		if c.superStepNumber%uint64(c.checkpointFrequency) == 0 {
-			shouldCheckPoint = true
-		}
+		shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
 
 		// call workers query handler
 		progressSuperStep := ProgressSuperStep{
@@ -184,6 +180,7 @@ func (c *Coord) Compute() error {
 
 		workerDone := make(chan *rpc.Call, len(workers))
 		allWorkersReady := make(chan bool, 1)
+		go c.checkWorkersReady(numWorkers, workerDone, allWorkersReady)
 
 		fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
 			c.superStepNumber, shouldCheckPoint)
@@ -194,7 +191,6 @@ func (c *Coord) Compute() error {
 				"Worker.ComputeVertices", progressSuperStep, &result,
 				workerDone,
 			)
-			go c.checkWorkersReady(numWorkers, workerDone, allWorkersReady)
 		}
 
 		select {
