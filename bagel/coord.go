@@ -149,14 +149,8 @@ func (c *Coord) UpdateCheckpoint(
 }
 
 func (c *Coord) Compute() error {
-
-	// todo
-
 	// keep sending messages to workers, until everything has completed.. hehe
 	// need to make it concurrent; so put in separate channel
-
-	// we need to put it in a pending queue
-	fmt.Printf("Coord: StartQuery: received query: %v\n", q)
 
 	// computation
 	c.workersMutex.Lock()
@@ -201,9 +195,8 @@ func (c *Coord) Compute() error {
 		}
 
 	}
-	// todo find out if all workers are finished
 
-	return nil // todo
+	return nil
 }
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {

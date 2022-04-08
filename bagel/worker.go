@@ -466,17 +466,6 @@ func (w *Worker) forwardMsgToVertices() {
 	}
 }
 
-func (w *Worker) ReceiveMessages(args Message, resp *Message) error {
-	if w.SuperStep.Id+1 != args.SuperStepNum {
-		return nil // ignore msgs not for next SuperStep
-	}
-
-	w.NextSuperStep.Messages[args.DestVertexId] =
-		append(w.NextSuperStep.Messages[args.DestVertexId], args)
-	resp = &args
-	return nil
-}
-
 func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error {
 	for _, msg := range batch.Batch {
 		w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
@@ -524,7 +513,6 @@ func (w *Worker) updateMessagesMap(msgs []Message) {
 	for _, msg := range msgs {
 		destWorker := msg.DestHash % uint64(w.NumWorkers)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
-		w.NextSuperStep.Messages[destWorker] = append(w.NextSuperStep.Messages[destWorker], msg)
 	}
 }
 
