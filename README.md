@@ -13,8 +13,9 @@ A distributed graph processor based on the Pregel API.
 
 ### Running the code
  - After building, the binary files will be found in the `./bin` folder
+ - Run the following in order to issue a query:
+   - `./bin/coord` runs a coordinator 
+   - `./bin/worker [workerId]` runs a worker node
    - `./bin/client runs a client instance that can be used to queue up requests
      - `client shortestpath {vertex1} {vertex2}` runs a shortest path calculation from vertex1 to vertex2
      - `client pagerank {vertex}` finds the flow value of the given vertex in the stationary distribution given by the pagerank algorithm
-   - `./bin/coord` runs a coordinator
-   - `./bin/worker [workerId]` runs a worker node
