@@ -154,7 +154,7 @@ func (w *Worker) StartQuery(
 
 		fmt.Printf("vertices of worker: %v\n", w.Vertices)
 	*/
-
+	*reply = WorkerInfo{WorkerId: w.config.WorkerId}
 	return nil
 }
 

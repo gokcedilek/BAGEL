@@ -55,8 +55,9 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 
 	// call workers query handler
 	startSuperStep := StartSuperStep{NumWorkers: uint8(len(c.workers))}
+	var result WorkerInfo
 
-	allWorkersReady := c.notifyWorkers("Worker.StartQuery", startSuperStep)
+	allWorkersReady := c.notifyWorkers("Worker.StartQuery", startSuperStep, result)
 
 	select {
 	case <-allWorkersReady:
@@ -76,23 +77,52 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 func (c *Coord) checkWorkersReady(
 	workerDone <-chan *rpc.Call,
 	allWorkersReady chan<- bool,
-) {
-	call := <-workerDone
+	pendingWorkerQueue *map[uint32]*rpc.Client) {
 
-	fmt.Printf("received call: %v\n", call)
+	for {
+		select {
+		case call := <-workerDone:
+			fmt.Printf("received reply: %v\n", call.Reply)
 
-	if call.Error != nil {
-		fmt.Printf("received error: %v\n", call.Error)
+			wInfo, ok := call.Reply.(*WorkerInfo)
+			/*
+				received reply: 0xc000204ef0
+				error decoding: false
+				worker info rcvd: <nil>
+				received error: reading body gob: local interface type *interface {} can only be decoded from remote interface type; received concrete type StartSuperStep = struct { NumWorkers uint; }
+			*/
+			if !ok {
+				fmt.Printf("error decoding: %v\n", ok)
+			}
+			fmt.Printf("worker info rcvd: %v\n", wInfo)
+
+			/*
+				received reply: 0xc000012940
+				error decoding: false
+				worker info rcvd: <nil>
+				received error: reading body EOF
+				received reply: 0xc000012980
+				error decoding: false
+				worker info rcvd: <nil>
+				received error: reading body EOF
+			*/
+
+			if call.Error != nil {
+				fmt.Printf("received error: %v\n", call.Error)
+			}
+
+			c.workerCounterMutex.Lock()
+			defer c.workerCounterMutex.Unlock()
+
+			c.workerCounter++
+			if c.workerCounter == len(c.workers) {
+				fmt.Println("sending all workers ready!")
+				allWorkersReady <- true
+				break
+			}
+		}
 	}
 
-	c.workerCounterMutex.Lock()
-	defer c.workerCounterMutex.Unlock()
-
-	c.workerCounter++
-	if c.workerCounter == len(c.workers) {
-		fmt.Println("sending all workers ready!")
-		allWorkersReady <- true
-	}
 }
 
 // TODO: test this!
@@ -121,7 +151,7 @@ func (c *Coord) UpdateCheckpoint(
 	return nil
 }
 
-func (c *Coord) notifyWorkers(rpcMethod string, input interface{}) <-chan bool {
+func (c *Coord) notifyWorkers(rpcMethod string, input interface{}, result interface{}) <-chan bool {
 	c.workersMutex.Lock()
 	workers := c.workers
 	c.workersMutex.Unlock()
@@ -129,11 +159,19 @@ func (c *Coord) notifyWorkers(rpcMethod string, input interface{}) <-chan bool {
 	workerDone := make(chan *rpc.Call, len(workers))
 	allWorkersReady := make(chan bool, 1)
 
-	for _, wClient := range workers {
-		var result interface{} // TODO: should we also return the results?
+	pendingWorkerQueue := workers
+
+	go c.checkWorkersReady(workerDone, allWorkersReady, &pendingWorkerQueue)
+
+	//for len(pendingWorkerQueue) > 0 {
+	for _, wClient := range pendingWorkerQueue {
+		//var result interface{} // TODO: should we also return the results?
+		//var result WorkerInfo
 		wClient.Go(rpcMethod, input, &result, workerDone)
-		go c.checkWorkersReady(workerDone, allWorkersReady)
+		//go c.checkWorkersReady(workerDone, allWorkersReady, pendingWorkerQueue)
 	}
+
+	//}
 
 	return allWorkersReady
 }
@@ -142,14 +180,14 @@ func (c *Coord) restartCheckpoint() {
 	checkpointNumber := c.lastCheckpointNumber
 	fmt.Printf("Coord: restarting checkpoint: %v\n", checkpointNumber)
 
-	restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
+	//restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
 
-	allWorkersReady := c.notifyWorkers("Worker.RevertToLastCheckpoint", restartSuperStep)
-
-	select {
-	case <-allWorkersReady:
-		fmt.Println("restartCheckpoint - all workers ready!")
-	}
+	//allWorkersReady := c.notifyWorkers("Worker.RevertToLastCheckpoint", restartSuperStep)
+	//
+	//select {
+	//case <-allWorkersReady:
+	//	fmt.Println("restartCheckpoint - all workers ready!")
+	//}
 }
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
