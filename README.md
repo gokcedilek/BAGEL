@@ -12,6 +12,6 @@ A distributed graph processor based on the Pregel API.
  - `clean` to remove the build files and clean the cached test results
 
 ### Run the app
- - ./bin/coord
- - ./bin/worker [workerId]
- - ./bin/client [query] [...args]
+ - `./bin/coord`
+ - `./bin/worker [workerId]`
+ - `./bin/client [query] [...args]`
