@@ -6,6 +6,11 @@ const (
 	SHORTEST_PATH = "ShortestPath"
 )
 
+// TODO: may be needed for the queryWorkers queue
+//type WorkerInfo struct {
+//	WorkerId uint32
+//}
+
 type WorkerNode struct {
 	WorkerId         uint32
 	WorkerAddr       string
@@ -15,6 +20,10 @@ type WorkerNode struct {
 
 type StartSuperStep struct {
 	NumWorkers uint8
+}
+
+type RestartSuperStep struct {
+	SuperStepNumber uint64
 }
 
 type CheckpointMsg struct {

@@ -6,15 +6,14 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 	"net"
 	"net/rpc"
 	"os"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
-
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // Message represents an arbitrary message sent during calculation
@@ -95,6 +94,7 @@ func (w *Worker) StartQuery(
 		"worker %v connecting to db from %v\n", w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
+
 	db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
 	defer db.Close()
 
@@ -158,7 +158,8 @@ func checkpointsSetup() (*sql.DB, error) {
 	//goland:noinspection SqlDialectInspection
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
-	  superStepNumber INTEGER NOT NULL PRIMARY KEY,
+	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, // TODO: use this for distributed processing
+-- 	  lastCheckpointNumber INTEGER NOT NULL, // TODO: use this for local setup (to be removed)
 	  checkpointState BLOB NOT NULL
 	  );`
 	db, err := sql.Open("sqlite3", "checkpoints.db")
@@ -253,7 +254,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	defer db.Close()
 
 	res := db.QueryRow(
-		"SELECT * FROM checkpoints WHERE superStepNumber=?", superStepNumber,
+		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?", superStepNumber,
 	)
 	checkpoint := Checkpoint{}
 	var buf []byte
@@ -263,7 +264,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 		fmt.Printf("scan error: %v\n", err)
 		return Checkpoint{}, err
 	}
-	fmt.Printf("buf: %v\n", buf)
+	fmt.Printf("ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf)
 	var checkpointState map[uint64]VertexCheckpoint
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
@@ -281,8 +282,9 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 }
 
 func (w *Worker) RevertToLastCheckpoint(
-	req CheckpointMsg, reply *Checkpoint,
+	req RestartSuperStep, reply *interface{},
 ) error {
+	fmt.Printf("worker %v received %v\n", w.config.WorkerId, req)
 	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
 	if err != nil {
 		fmt.Printf("error retrieving checkpoint: %v\n", err)
@@ -300,6 +302,7 @@ func (w *Worker) RevertToLastCheckpoint(
 			w.Vertices[k] = v
 		}
 	}
+	fmt.Printf("vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
 	// TODO: call compute wrapper with new superstep #
 	/*
 		@author Ryan:
@@ -307,7 +310,6 @@ func (w *Worker) RevertToLastCheckpoint(
 			2) Workers respond (ie. all recovered checkpoint)
 			3) Coord -> Workers proceed to Computer SS #(S + 1)
 	*/
-	*reply = checkpoint
 	return nil
 }
 
@@ -364,6 +366,7 @@ func (w *Worker) Start() error {
 	conn, err := util.DialTCPCustom(
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
+
 	util.CheckErr(
 		err, fmt.Sprintf(
 			"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,
@@ -398,6 +401,23 @@ func (w *Worker) Start() error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
+	// TODO: this needs to be tested properly when workers are deployed on different machines
+	// begin checkpoints test
+	checkpoint := Checkpoint{
+		SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
+	}
+
+	checkpoint.CheckpointState[uint64(w.config.WorkerId)] = VertexCheckpoint{
+		CurrentValue: float64(w.config.WorkerId),
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint, err = w.storeCheckpoint(checkpoint)
+	fmt.Printf("stored checkpoint: %v\n", checkpoint)
+
+	// end checkpoints test
+
 	// go wait for work to do
 	wg.Wait()
 
@@ -429,7 +449,7 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 
 func (w *Worker) forwardMsgToVertices() {
 	for vId, v := range w.Vertices {
-		v.messages = w.NextSuperStep.Messages[vId]
+		v.messages = w.NextSuperStep.Messages[vId] // what about remote vertices?
 	}
 }
 

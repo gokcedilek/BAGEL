@@ -1,6 +1,6 @@
 {
   "ClientAPIListenAddr": "127.0.0.1:54321",
-  "WorkerAPIListenAddr": "127.0.0.1:12333",
+  "WorkerAPIListenAddr": "127.0.0.1:12444",
   "LostMsgsThresh": 3,
   "StepsBetweenCheckpoints": 5
 }
