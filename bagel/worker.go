@@ -168,7 +168,7 @@ func checkpointsSetup() (*sql.DB, error) {
 	//goland:noinspection SqlDialectInspection
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
-	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, // TODO: use this for distributed processing
+	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, 
 -- 	  lastCheckpointNumber INTEGER NOT NULL, // TODO: use this for local setup (to be removed)
 	  checkpointState BLOB NOT NULL
 	  );`
@@ -216,7 +216,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 
 	_, err = db.Exec(
-		"INSERT INTO checkpoints VALUES(?,?)", checkpoint.SuperStepNumber,
+		"INSERT INTO checkpoints VALUES(?,?)",
+		checkpoint.SuperStepNumber,
 		buf.Bytes(),
 	)
 	if err != nil {

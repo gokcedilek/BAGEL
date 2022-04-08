@@ -35,7 +35,7 @@ type Coord struct {
 	workerCounter         int
 	workerCounterMutex    sync.Mutex
 	checkpointFrequency   int
-	superStepNumber uint64
+	superStepNumber       uint64
 }
 
 func NewCoord() *Coord {
@@ -45,6 +45,7 @@ func NewCoord() *Coord {
 		lostMsgsThresh:        0,
 		lastWorkerCheckpoints: make(map[uint32]uint64),
 		workers:               make(map[uint32]*rpc.Client),
+		checkpointFrequency:   1,
 	}
 }
 
@@ -84,7 +85,6 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 
 	// TODO: invoke another function to handle the rest of the request
 	err := c.Compute()
-
 	if err != nil {
 		fmt.Println(fmt.Sprintf("Coord: Compute err: %v", err))
 	}
@@ -121,6 +121,9 @@ func (c *Coord) checkWorkersReady(
 			if c.workerCounter == numWorkers {
 				fmt.Printf("Coord: checkWorkersReady: sending all %d workers ready!\n", numWorkers)
 				allWorkersReady <- true
+				c.workerCounterMutex.Lock()
+				c.workerCounter = 0
+				c.workerCounterMutex.Unlock()
 				break
 			}
 		}
@@ -154,7 +157,7 @@ func (c *Coord) UpdateCheckpoint(
 }
 
 func (c *Coord) Compute() error {
-	// keep sending messages to workers, until everything has completed.. hehe
+	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
 
 	// computation
@@ -203,7 +206,6 @@ func (c *Coord) Compute() error {
 
 	return nil
 }
-
 
 func (c *Coord) restartCheckpoint() {
 	checkpointNumber := c.lastCheckpointNumber
