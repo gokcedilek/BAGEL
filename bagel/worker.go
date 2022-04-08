@@ -158,7 +158,8 @@ func checkpointsSetup() (*sql.DB, error) {
 	//goland:noinspection SqlDialectInspection
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
-	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY,
+	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, // TODO: use this for distributed processing
+-- 	  lastCheckpointNumber INTEGER NOT NULL, // TODO: use this for local setup (to be removed)
 	  checkpointState BLOB NOT NULL
 	  );`
 	db, err := sql.Open("sqlite3", "checkpoints.db")
@@ -215,7 +216,6 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		"inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes(),
 	)
 
-	// TODO: test this!
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
 	util.CheckErr(
@@ -400,6 +400,23 @@ func (w *Worker) Start() error {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
+
+	// TODO: this needs to be tested properly when workers are deployed on different machines
+	// begin checkpoints test
+	checkpoint := Checkpoint{
+		SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
+	}
+
+	checkpoint.CheckpointState[uint64(w.config.WorkerId)] = VertexCheckpoint{
+		CurrentValue: float64(w.config.WorkerId),
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint, err = w.storeCheckpoint(checkpoint)
+	fmt.Printf("stored checkpoint: %v\n", checkpoint)
+
+	// end checkpoints test
 
 	// go wait for work to do
 	wg.Wait()
