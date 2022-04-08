@@ -6,9 +6,9 @@ const (
 	SHORTEST_PATH = "ShortestPath"
 )
 
-type WorkerInfo struct {
-	WorkerId uint32
-}
+//type WorkerInfo struct {
+//	WorkerId uint32
+//}
 
 type WorkerNode struct {
 	WorkerId         uint32

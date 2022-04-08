@@ -154,7 +154,6 @@ func (w *Worker) StartQuery(
 
 		fmt.Printf("vertices of worker: %v\n", w.Vertices)
 	*/
-	*reply = WorkerInfo{WorkerId: w.config.WorkerId}
 	return nil
 }
 
@@ -375,6 +374,7 @@ func (w *Worker) Start() error {
 	conn, err := util.DialTCPCustom(
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
+	//fmt.Printf("worker config: %v\n", w.config)
 	util.CheckErr(
 		err, fmt.Sprintf(
 			"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,

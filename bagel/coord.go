@@ -53,18 +53,38 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	// we need to put it in a pending queue
 	fmt.Printf("Coord: StartQuery: received query: %v\n", q)
 
-	// call workers query handler
-	startSuperStep := StartSuperStep{NumWorkers: uint8(len(c.workers))}
-	var result WorkerInfo
+	// computation
+	c.workersMutex.Lock()
+	workers := c.workers // workers = workers used for this query, c.workers may add new workers for next query
+	c.workersMutex.Unlock()
 
-	allWorkersReady := c.notifyWorkers("Worker.StartQuery", startSuperStep, result)
+	// call workers query handler
+	startSuperStep := StartSuperStep{NumWorkers: uint8(len(workers))}
+	numWorkers := len(workers)
+	workerDone := make(chan *rpc.Call, numWorkers)
+	allWorkersReady := make(chan bool, 1)
+
+	fmt.Printf("Coord: StartQuery: computing query %v with %d workers ready!\n", q, numWorkers)
+
+	go c.checkWorkersReady(numWorkers, workerDone, allWorkersReady)
+	for _, wClient := range workers {
+		var result interface{}
+		wClient.Go(
+			"Worker.StartQuery", startSuperStep, &result,
+			workerDone,
+		)
+		//go c.checkWorkersReady(numWorkers, workerDone, allWorkersReady)
+	}
 
 	select {
 	case <-allWorkersReady:
-		fmt.Println("StartQuery - all workers ready!")
+		fmt.Printf("Coord: StartQuery: received all %d workers ready!\n", numWorkers)
 	}
 
 	// TODO: invoke another function to handle the rest of the request
+
+	// TODO: for testing workers joining during query, remove
+	// time.Sleep(10 * time.Second)
 
 	reply.Query = q
 	reply.Result = -1
@@ -75,54 +95,30 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 
 // check if all workers are ready to start superstep 0
 func (c *Coord) checkWorkersReady(
+	numWorkers int,
 	workerDone <-chan *rpc.Call,
-	allWorkersReady chan<- bool,
-	pendingWorkerQueue *map[uint32]*rpc.Client) {
+	allWorkersReady chan<- bool) {
 
 	for {
 		select {
 		case call := <-workerDone:
-			fmt.Printf("received reply: %v\n", call.Reply)
-
-			wInfo, ok := call.Reply.(*WorkerInfo)
-			/*
-				received reply: 0xc000204ef0
-				error decoding: false
-				worker info rcvd: <nil>
-				received error: reading body gob: local interface type *interface {} can only be decoded from remote interface type; received concrete type StartSuperStep = struct { NumWorkers uint; }
-			*/
-			if !ok {
-				fmt.Printf("error decoding: %v\n", ok)
-			}
-			fmt.Printf("worker info rcvd: %v\n", wInfo)
-
-			/*
-				received reply: 0xc000012940
-				error decoding: false
-				worker info rcvd: <nil>
-				received error: reading body EOF
-				received reply: 0xc000012980
-				error decoding: false
-				worker info rcvd: <nil>
-				received error: reading body EOF
-			*/
+			fmt.Printf("Coord: checkWorkersReady: received reply: %v\n", call.Reply)
 
 			if call.Error != nil {
-				fmt.Printf("received error: %v\n", call.Error)
+				fmt.Printf("Coord: checkWorkersReady: received error: %v\n", call.Error)
 			}
 
 			c.workerCounterMutex.Lock()
-			defer c.workerCounterMutex.Unlock()
-
 			c.workerCounter++
-			if c.workerCounter == len(c.workers) {
-				fmt.Println("sending all workers ready!")
+			c.workerCounterMutex.Unlock()
+
+			if c.workerCounter == numWorkers {
+				fmt.Printf("Coord: checkWorkersReady: sending all %d workers ready!\n", numWorkers)
 				allWorkersReady <- true
 				break
 			}
 		}
 	}
-
 }
 
 // TODO: test this!
@@ -151,30 +147,30 @@ func (c *Coord) UpdateCheckpoint(
 	return nil
 }
 
-func (c *Coord) notifyWorkers(rpcMethod string, input interface{}, result interface{}) <-chan bool {
-	c.workersMutex.Lock()
-	workers := c.workers
-	c.workersMutex.Unlock()
-
-	workerDone := make(chan *rpc.Call, len(workers))
-	allWorkersReady := make(chan bool, 1)
-
-	pendingWorkerQueue := workers
-
-	go c.checkWorkersReady(workerDone, allWorkersReady, &pendingWorkerQueue)
-
-	//for len(pendingWorkerQueue) > 0 {
-	for _, wClient := range pendingWorkerQueue {
-		//var result interface{} // TODO: should we also return the results?
-		//var result WorkerInfo
-		wClient.Go(rpcMethod, input, &result, workerDone)
-		//go c.checkWorkersReady(workerDone, allWorkersReady, pendingWorkerQueue)
-	}
-
-	//}
-
-	return allWorkersReady
-}
+//func (c *Coord) notifyWorkers(rpcMethod string, input interface{}, result interface{}) <-chan bool {
+//	c.workersMutex.Lock()
+//	workers := c.workers
+//	c.workersMutex.Unlock()
+//
+//	workerDone := make(chan *rpc.Call, len(workers))
+//	allWorkersReady := make(chan bool, 1)
+//
+//	pendingWorkerQueue := workers
+//
+//	go c.checkWorkersReady(workerDone, allWorkersReady, &pendingWorkerQueue)
+//
+//	//for len(pendingWorkerQueue) > 0 {
+//	for _, wClient := range pendingWorkerQueue {
+//		//var result interface{} // TODO: should we also return the results?
+//		//var result WorkerInfo
+//		wClient.Go(rpcMethod, input, &result, workerDone)
+//		//go c.checkWorkersReady(workerDone, allWorkersReady, pendingWorkerQueue)
+//	}
+//
+//	//}
+//
+//	return allWorkersReady
+//}
 
 func (c *Coord) restartCheckpoint() {
 	checkpointNumber := c.lastCheckpointNumber
