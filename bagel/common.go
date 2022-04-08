@@ -21,6 +21,15 @@ type StartSuperStep struct {
 	NumWorkers uint8
 }
 
+type ProgressSuperStep struct {
+	SuperStepNum uint64
+	IsCheckPoint bool
+}
+
+type SuperStepComplete struct {
+	IsActive bool
+}
+
 type CheckpointMsg struct {
 	SuperStepNumber uint64
 	WorkerId        uint32

@@ -35,6 +35,7 @@ type Coord struct {
 	lastWorkerCheckpoints map[uint32]uint64
 	workerCounter         int
 	workerCounterMutex    sync.Mutex
+	checkpointFrequency   int
 }
 
 func NewCoord() *Coord {
@@ -82,6 +83,11 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	}
 
 	// TODO: invoke another function to handle the rest of the request
+	err := c.Compute()
+
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Coord: Compute err: %v", err))
+	}
 
 	// TODO: for testing workers joining during query, remove
 	// time.Sleep(10 * time.Second)
@@ -143,6 +149,60 @@ func (c *Coord) UpdateCheckpoint(
 }
 
 func (c *Coord) Compute() error {
+
+	// todo
+
+	// keep sending messages to workers, until everything has completed.. hehe
+	// need to make it concurrent; so put in separate channel
+
+	// we need to put it in a pending queue
+	fmt.Printf("Coord: StartQuery: received query: %v\n", q)
+
+	// computation
+	c.workersMutex.Lock()
+	workers := c.workers // workers = workers used for this query, c.workers may add new workers for next query
+	c.workersMutex.Unlock()
+
+	numWorkers := len(c.workers)
+
+	// TODO check if all workers are finished
+	for i := 0; i < 5; i++ {
+
+		shouldCheckPoint := false
+
+		if c.superStepNumber%uint64(c.checkpointFrequency) == 0 {
+			shouldCheckPoint = true
+		}
+
+		// call workers query handler
+		progressSuperStep := ProgressSuperStep{
+			SuperStepNum: c.superStepNumber,
+			IsCheckPoint: shouldCheckPoint,
+		}
+
+		workerDone := make(chan *rpc.Call, len(workers))
+		allWorkersReady := make(chan bool, 1)
+
+		fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
+			c.superStepNumber, shouldCheckPoint)
+
+		for _, wClient := range workers {
+			var result interface{}
+			wClient.Go(
+				"Worker.ComputeVertices", progressSuperStep, &result,
+				workerDone,
+			)
+			go c.checkWorkersReady(numWorkers, workerDone, allWorkersReady)
+		}
+
+		select {
+		case <-allWorkersReady:
+			fmt.Printf("Coord: Compute: received all %d workers compute complete!\n", numWorkers)
+		}
+
+	}
+	// todo find out if all workers are finished
+
 	return nil // todo
 }
 
