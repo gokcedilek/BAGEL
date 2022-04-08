@@ -366,7 +366,7 @@ func (w *Worker) Start() error {
 	conn, err := util.DialTCPCustom(
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
-	//fmt.Printf("worker config: %v\n", w.config)
+
 	util.CheckErr(
 		err, fmt.Sprintf(
 			"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,
@@ -400,30 +400,6 @@ func (w *Worker) Start() error {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-
-	// begin test
-	checkpoint := Checkpoint{
-		SuperStepNumber: 1, CheckpointState: make(map[uint64]VertexCheckpoint),
-	}
-
-	checkpoint.CheckpointState[uint64(w.config.WorkerId)] = VertexCheckpoint{
-		CurrentValue: float64(w.config.WorkerId),
-		Messages:     nil,
-		IsActive:     true,
-	}
-
-	//for i := 1; i < 4; i++ {
-	//	checkpoint.CheckpointState[uint64(i)] = VertexCheckpoint{
-	//		CurrentValue: float64(i),
-	//		Messages:     nil,
-	//		IsActive:     true,
-	//	}
-	//}
-
-	checkpoint, err = w.storeCheckpoint(checkpoint)
-	fmt.Printf("stored checkpoint: %v\n", checkpoint)
-
-	// end test
 
 	// go wait for work to do
 	wg.Wait()

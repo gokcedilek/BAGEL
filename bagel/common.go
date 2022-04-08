@@ -6,6 +6,7 @@ const (
 	SHORTEST_PATH = "ShortestPath"
 )
 
+// TODO: may be needed for the queryWorkers queue
 //type WorkerInfo struct {
 //	WorkerId uint32
 //}
