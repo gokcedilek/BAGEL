@@ -23,6 +23,7 @@ type Message struct {
 	SuperStepNum   uint64
 	SourceVertexId uint64
 	DestVertexId   uint64
+	DestHash       uint64
 	Value          interface{}
 }
 
@@ -36,10 +37,12 @@ type WorkerConfig struct {
 
 type Worker struct {
 	// Worker state may go here
-	config        WorkerConfig
-	SuperStep     SuperStep
-	NextSuperStep SuperStep
-	Vertices      map[uint64]Vertex
+	config          WorkerConfig
+	SuperStep       SuperStep
+	NextSuperStep   SuperStep
+	Vertices        map[uint64]Vertex
+	workerDirectory WorkerDirectory
+	NumWorkers      uint32
 }
 
 type Checkpoint struct {
@@ -51,8 +54,12 @@ type SuperStep struct {
 	Id           uint64
 	QueryType    string
 	Messages     map[uint64][]Message
-	Outgoing     map[uint32]uint64
+	Outgoing     map[uint32][]Message
 	IsCheckpoint bool
+}
+
+type BatchedMessages struct {
+	Batch []Message
 }
 
 func NewWorker(config WorkerConfig) *Worker {
@@ -90,6 +97,9 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *interface{},
 ) error {
+
+	w.NumWorkers = uint32(startSuperStep.NumWorkers)
+
 	// workers need to connect to the db and initialize state
 	fmt.Printf(
 		"worker %v connecting to db from %v\n", w.config.WorkerId,
@@ -141,7 +151,7 @@ func (w *Worker) StartQuery(
 				messages:     nil,
 				isActive:     false,
 				workerAddr:   w.config.WorkerAddr,
-				Superstep:    0,
+				SuperStep:    0,
 			}
 			w.Vertices[pair.srcId] = pianoVertex
 		}
@@ -300,7 +310,7 @@ func (w *Worker) RevertToLastCheckpoint(
 			w.Vertices[k] = v
 		}
 	}
-	// TODO: call compute wrapper with new superstep #
+	// TODO: call compute wrapper with new SuperStep #
 	/*
 		@author Ryan:
 			1) Coord -> Workers to recover to checkpoint S
@@ -409,7 +419,7 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 
 	for _, vertex := range w.Vertices {
 		messages := vertex.Compute()
-		w.updateMessageMap(messages)
+		w.updateMessagesMap(messages)
 	}
 
 	if args.IsCheckpoint {
@@ -423,21 +433,42 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 		)
 	}
 
-	// todo send out messages to other workers here
+	for worker, msgs := range w.SuperStep.Outgoing {
+		batch := BatchedMessages{Batch: msgs}
+		var unused Message
+		err := w.workerDirectory[worker].Call("Worker.PutBatchedMessages", batch, &unused)
+		if err != nil {
+			fmt.Println(
+				fmt.Sprintf(
+					"worker %v could not send messages to worker: %v",
+					w.config.WorkerId, worker,
+				),
+			)
+		}
+	}
 
 	resp = &w.SuperStep
+	err := w.handleSuperStepDone()
+
+	if err != nil {
+		fmt.Println(
+			fmt.Sprintf("worker %v could not complete superstep # %v",
+				w.config.WorkerId, w.SuperStep.Id),
+		)
+	}
+
 	return nil
 }
 
 func (w *Worker) forwardMsgToVertices() {
 	for vId, v := range w.Vertices {
-		v.messages = w.NextSuperStep.Messages[vId]
+		v.messages = w.SuperStep.Messages[vId]
 	}
 }
 
 func (w *Worker) ReceiveMessages(args Message, resp *Message) error {
 	if w.SuperStep.Id+1 != args.SuperStepNum {
-		return nil // ignore msgs not for next superstep
+		return nil // ignore msgs not for next SuperStep
 	}
 
 	w.NextSuperStep.Messages[args.DestVertexId] =
@@ -446,9 +477,18 @@ func (w *Worker) ReceiveMessages(args Message, resp *Message) error {
 	return nil
 }
 
+func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error {
+	for _, msg := range batch.Batch {
+		w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
+	}
+
+	resp = &Message{}
+	return nil
+}
+
 func (w *Worker) handleSuperStepDone() error {
 	fmt.Printf(
-		"Worker %v transitioning from superstep # %d to superstep # %d\n",
+		"Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
 		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
 	)
 	err := w.sendSuperStepDone()
@@ -480,15 +520,14 @@ func (w *Worker) sendSuperStepDone() error {
 	return err
 }
 
-func (w *Worker) getVertexPartition(vertexId uint64) uint32 {
-	// need hash function and number of workers
-	// 		should this state be separate from the Worker? (ie. should only coord be aware)
-	return 0
+func (w *Worker) updateMessagesMap(msgs []Message) {
+	for _, msg := range msgs {
+		destWorker := msg.DestHash % uint64(w.NumWorkers)
+		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
+		w.NextSuperStep.Messages[destWorker] = append(w.NextSuperStep.Messages[destWorker], msg)
+	}
 }
 
-func (w *Worker) updateMessageMap(msgs []Message) {
-	for _, msg := range msgs {
-		destWorker := w.getVertexPartition(msg.DestVertexId)
-		w.SuperStep.Outgoing[destWorker] += 1
-	}
+func (w *Worker) getVertexPartition(vertexId uint64) uint32 {
+	return uint32(vertexId % uint64(w.NumWorkers))
 }

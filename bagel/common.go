@@ -1,5 +1,9 @@
 package bagel
 
+import (
+	"net/rpc"
+)
+
 // constants are used as msgType for the messages
 const (
 	PAGE_RANK     = "PageRank"
@@ -22,4 +26,4 @@ type CheckpointMsg struct {
 	WorkerId        uint32
 }
 
-type WorkerAddressBook map[uint32]string
+type WorkerDirectory map[uint32]*rpc.Client

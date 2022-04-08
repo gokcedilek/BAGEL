@@ -8,7 +8,7 @@ type Vertex struct {
 	messages     []Message
 	isActive     bool
 	workerAddr   string
-	Superstep    uint64
+	SuperStep    uint64
 }
 
 type VertexCheckpoint struct {

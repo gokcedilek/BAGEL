@@ -48,7 +48,7 @@ func NewCoord() *Coord {
 }
 
 // this is the start of the query where coord notifies workers to initialize
-// state for superstep 0
+// state for SuperStep 0
 func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	// TODO: if a query is received while another one is being processed,
 	// we need to put it in a pending queue
@@ -93,7 +93,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	return nil
 }
 
-// check if all workers are ready to start superstep 0
+// check if all workers are ready to start SuperStep 0
 func (c *Coord) checkWorkersReady(
 	numWorkers int,
 	workerDone <-chan *rpc.Call,
@@ -121,10 +121,10 @@ func (c *Coord) UpdateCheckpoint(
 	msg CheckpointMsg, reply *CheckpointMsg,
 ) error {
 	fmt.Printf("called update checkpoint with msg: %v\n", msg)
-	// save the last superstep # checkpointed by this worker
+	// save the last SuperStep # checkpointed by this worker
 	c.lastWorkerCheckpoints[msg.WorkerId] = msg.SuperStepNumber
 
-	// update global superstep # if needed
+	// update global SuperStep # if needed
 	allWorkersUpdated := true
 	for _, v := range c.lastWorkerCheckpoints {
 		if v != msg.SuperStepNumber {
@@ -140,6 +140,10 @@ func (c *Coord) UpdateCheckpoint(
 
 	*reply = msg
 	return nil
+}
+
+func (c *Coord) Compute() error {
+	return nil // todo
 }
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
