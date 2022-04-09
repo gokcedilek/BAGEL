@@ -34,6 +34,8 @@ type Coord struct {
 	lastWorkerCheckpoints map[uint32]uint64
 	workerCounter         int
 	workerCounterMutex    sync.Mutex
+	checkpointFrequency   int
+	superStepNumber       uint64
 }
 
 func NewCoord() *Coord {
@@ -43,11 +45,12 @@ func NewCoord() *Coord {
 		lostMsgsThresh:        0,
 		lastWorkerCheckpoints: make(map[uint32]uint64),
 		workers:               make(map[uint32]*rpc.Client),
+		checkpointFrequency:   1,
 	}
 }
 
 // this is the start of the query where coord notifies workers to initialize
-// state for superstep 0
+// state for SuperStep 0
 func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	// TODO: if a query is received while another one is being processed,
 	// we need to put it in a pending queue
@@ -81,6 +84,10 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	}
 
 	// TODO: invoke another function to handle the rest of the request
+	err := c.Compute()
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Coord: Compute err: %v", err))
+	}
 
 	// TODO: for testing workers joining during query, remove
 	// time.Sleep(10 * time.Second)
@@ -114,6 +121,9 @@ func (c *Coord) checkWorkersReady(
 			if c.workerCounter == numWorkers {
 				fmt.Printf("Coord: checkWorkersReady: sending all %d workers ready!\n", numWorkers)
 				allWorkersReady <- true
+				c.workerCounterMutex.Lock()
+				c.workerCounter = 0
+				c.workerCounterMutex.Unlock()
 				break
 			}
 		}
@@ -125,10 +135,10 @@ func (c *Coord) UpdateCheckpoint(
 	msg CheckpointMsg, reply *CheckpointMsg,
 ) error {
 	fmt.Printf("called update checkpoint with msg: %v\n", msg)
-	// save the last superstep # checkpointed by this worker
+	// save the last SuperStep # checkpointed by this worker
 	c.lastWorkerCheckpoints[msg.WorkerId] = msg.SuperStepNumber
 
-	// update global superstep # if needed
+	// update global SuperStep # if needed
 	allWorkersUpdated := true
 	for _, v := range c.lastWorkerCheckpoints {
 		if v != msg.SuperStepNumber {
@@ -143,6 +153,55 @@ func (c *Coord) UpdateCheckpoint(
 	}
 
 	*reply = msg
+	return nil
+}
+
+func (c *Coord) Compute() error {
+	// keep sending messages to workers, until everything has completed
+	// need to make it concurrent; so put in separate channel
+
+	// computation
+	c.workersMutex.Lock()
+	workers := c.workers // workers = workers used for this query, c.workers may add new workers for next query
+	c.workersMutex.Unlock()
+
+	numWorkers := len(c.workers)
+
+	// TODO check if all workers are finished
+	for i := 0; i < 5; i++ {
+
+		shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
+
+		// call workers query handler
+		progressSuperStep := ProgressSuperStep{
+			SuperStepNum: c.superStepNumber,
+			IsCheckpoint: shouldCheckPoint,
+		}
+
+		workerDone := make(chan *rpc.Call, len(workers))
+		allWorkersReady := make(chan bool, 1)
+		go c.checkWorkersReady(numWorkers, workerDone, allWorkersReady)
+
+		fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
+			c.superStepNumber, shouldCheckPoint)
+
+		for _, wClient := range workers {
+			var result ProgressSuperStep
+			wClient.Go(
+				"Worker.ComputeVertices", progressSuperStep, &result,
+				workerDone,
+			)
+		}
+
+		select {
+		case <-allWorkersReady:
+			fmt.Printf("Coord: Compute: received all %d workers compute complete!\n", numWorkers)
+		}
+
+		c.superStepNumber += 1
+
+	}
+
 	return nil
 }
 

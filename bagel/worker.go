@@ -22,6 +22,7 @@ type Message struct {
 	SuperStepNum   uint64
 	SourceVertexId uint64
 	DestVertexId   uint64
+	DestHash       uint64
 	Value          interface{}
 }
 
@@ -35,10 +36,12 @@ type WorkerConfig struct {
 
 type Worker struct {
 	// Worker state may go here
-	config        WorkerConfig
-	SuperStep     SuperStep
-	NextSuperStep SuperStep
-	Vertices      map[uint64]Vertex
+	config          WorkerConfig
+	SuperStep       SuperStep
+	NextSuperStep   SuperStep
+	Vertices        map[uint64]Vertex
+	workerDirectory WorkerDirectory
+	NumWorkers      uint32
 }
 
 type Checkpoint struct {
@@ -50,8 +53,12 @@ type SuperStep struct {
 	Id           uint64
 	QueryType    string
 	Messages     map[uint64][]Message
-	Outgoing     map[uint32]uint64
+	Outgoing     map[uint32][]Message
 	IsCheckpoint bool
+}
+
+type BatchedMessages struct {
+	Batch []Message
 }
 
 func NewWorker(config WorkerConfig) *Worker {
@@ -89,6 +96,9 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *interface{},
 ) error {
+
+	w.NumWorkers = uint32(startSuperStep.NumWorkers)
+
 	// workers need to connect to the db and initialize state
 	fmt.Printf(
 		"worker %v connecting to db from %v\n", w.config.WorkerId,
@@ -141,7 +151,7 @@ func (w *Worker) StartQuery(
 				messages:     nil,
 				isActive:     false,
 				workerAddr:   w.config.WorkerAddr,
-				Superstep:    0,
+				SuperStep:    0,
 			}
 			w.Vertices[pair.srcId] = pianoVertex
 		}
@@ -158,7 +168,7 @@ func checkpointsSetup() (*sql.DB, error) {
 	//goland:noinspection SqlDialectInspection
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
-	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, // TODO: use this for distributed processing
+	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, 
 -- 	  lastCheckpointNumber INTEGER NOT NULL, // TODO: use this for local setup (to be removed)
 	  checkpointState BLOB NOT NULL
 	  );`
@@ -206,7 +216,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 
 	_, err = db.Exec(
-		"INSERT INTO checkpoints VALUES(?,?)", checkpoint.SuperStepNumber,
+		"INSERT INTO checkpoints VALUES(?,?)",
+		checkpoint.SuperStepNumber,
 		buf.Bytes(),
 	)
 	if err != nil {
@@ -424,13 +435,27 @@ func (w *Worker) Start() error {
 	return nil
 }
 
-func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
+func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
 	w.forwardMsgToVertices()
+	pendingMsgsExist := len(w.SuperStep.Messages) != 0
+	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messageMap := vertex.Compute()
-		w.updateMessageMap(messageMap)
+		messages := vertex.Compute()
+		w.updateMessagesMap(messages)
+		if vertex.isActive {
+			allVerticesInactive = false
+		}
 	}
+
+	fmt.Printf("Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
+		pendingMsgsExist, allVerticesInactive)
+
+	/* TODO commented out until Vertex Compute() impl.
+	if !pendingMsgsExist && allVerticesInactive {
+		fmt.Printf("All vertices are inactive - worker is inactive.\n")
+	}
+	*/
 
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
@@ -443,63 +468,73 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 		)
 	}
 
-	resp = &w.SuperStep
+	for worker, msgs := range w.SuperStep.Outgoing {
+
+		// local vertices
+		if worker == w.config.WorkerId {
+			w.SuperStep.Outgoing[worker] = msgs
+			continue
+		}
+
+		batch := BatchedMessages{Batch: msgs}
+		var unused Message
+		// todo change to Go
+		err := w.workerDirectory[worker].Call("Worker.PutBatchedMessages", batch, &unused)
+		if err != nil {
+			fmt.Printf("worker %v could not send messages to worker: %v\n",
+				w.config.WorkerId, worker)
+		}
+	}
+
+	resp = &ProgressSuperStep{
+		SuperStepNum: w.SuperStep.Id,
+		IsCheckpoint: args.IsCheckpoint,
+		IsActive:     !pendingMsgsExist && allVerticesInactive,
+	}
+
+	err := w.handleSuperStepDone()
+
+	if err != nil {
+		fmt.Println(err)
+		fmt.Printf("worker %v could not complete superstep # %v\n",
+			w.config.WorkerId, w.SuperStep.Id)
+	}
+
 	return nil
 }
 
 func (w *Worker) forwardMsgToVertices() {
 	for vId, v := range w.Vertices {
-		v.messages = w.NextSuperStep.Messages[vId] // what about remote vertices?
+		v.messages = w.SuperStep.Messages[vId]
 	}
 }
 
-func (w *Worker) ReceiveMessages(args Message, resp *Message) error {
-	if w.SuperStep.Id+1 != args.SuperStepNum {
-		return nil // ignore msgs not for next superstep
+func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error {
+	for _, msg := range batch.Batch {
+		w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
 	}
 
-	w.NextSuperStep.Messages[args.DestVertexId] =
-		append(w.NextSuperStep.Messages[args.DestVertexId], args)
-	resp = &args
+	resp = &Message{}
 	return nil
 }
 
 func (w *Worker) handleSuperStepDone() error {
+
+	w.NextSuperStep.Id = w.SuperStep.Id + 1
+
 	fmt.Printf(
-		"Worker %v transitioning from superstep # %d to superstep # %d\n",
+		"Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
 		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
 	)
-	err := w.sendSuperStepDone()
-
-	if err != nil {
-		return err
-	}
 
 	w.SuperStep = w.NextSuperStep
-	w.NextSuperStep = SuperStep{}
+	w.NextSuperStep = SuperStep{Id: w.SuperStep.Id + 1}
 	return nil
 }
 
-func (w *Worker) sendSuperStepDone() error {
-
-	client, err := util.DialRPC(w.config.CoordAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Failed to establish connection with coord %v\n",
-			w.config.CoordAddr,
-		),
-	)
-	defer client.Close()
-
-	var resp SuperStepDone
-
-	// Todo determine coord RPC func method
-	err = client.Call("Coord.SuperStepDone", w.SuperStep, &resp)
-	return err
-}
-
-func (w *Worker) updateMessageMap(msgMap map[uint32]uint64) {
-	for worker, numMessages := range msgMap {
-		w.SuperStep.Outgoing[worker] += numMessages
+func (w *Worker) updateMessagesMap(msgs []Message) {
+	for _, msg := range msgs {
+		destWorker := msg.DestHash % uint64(w.NumWorkers)
+		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
 }
