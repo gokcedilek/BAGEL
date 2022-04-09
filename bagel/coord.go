@@ -175,7 +175,7 @@ func (c *Coord) Compute() error {
 		// call workers query handler
 		progressSuperStep := ProgressSuperStep{
 			SuperStepNum: c.superStepNumber,
-			IsCheckPoint: shouldCheckPoint,
+			IsCheckpoint: shouldCheckPoint,
 		}
 
 		workerDone := make(chan *rpc.Call, len(workers))
@@ -186,7 +186,7 @@ func (c *Coord) Compute() error {
 			c.superStepNumber, shouldCheckPoint)
 
 		for _, wClient := range workers {
-			var result interface{}
+			var result ProgressSuperStep
 			wClient.Go(
 				"Worker.ComputeVertices", progressSuperStep, &result,
 				workerDone,
@@ -197,6 +197,8 @@ func (c *Coord) Compute() error {
 		case <-allWorkersReady:
 			fmt.Printf("Coord: Compute: received all %d workers compute complete!\n", numWorkers)
 		}
+
+		c.superStepNumber += 1
 
 	}
 

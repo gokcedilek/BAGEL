@@ -435,13 +435,27 @@ func (w *Worker) Start() error {
 	return nil
 }
 
-func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
+func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
 	w.forwardMsgToVertices()
+	pendingMsgsExist := len(w.SuperStep.Messages) != 0
+	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
 		messages := vertex.Compute()
 		w.updateMessagesMap(messages)
+		if vertex.isActive {
+			allVerticesInactive = false
+		}
 	}
+
+	fmt.Printf("Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
+		pendingMsgsExist, allVerticesInactive)
+
+	/* TODO commented out until Vertex Compute() impl.
+	if !pendingMsgsExist && allVerticesInactive {
+		fmt.Printf("All vertices are inactive - worker is inactive.\n")
+	}
+	*/
 
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
@@ -455,8 +469,16 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 	}
 
 	for worker, msgs := range w.SuperStep.Outgoing {
+
+		// local vertices
+		if worker == w.config.WorkerId {
+			w.SuperStep.Outgoing[worker] = msgs
+			continue
+		}
+
 		batch := BatchedMessages{Batch: msgs}
 		var unused Message
+		// todo change to Go
 		err := w.workerDirectory[worker].Call("Worker.PutBatchedMessages", batch, &unused)
 		if err != nil {
 			fmt.Printf("worker %v could not send messages to worker: %v\n",
@@ -464,10 +486,16 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 		}
 	}
 
-	resp = &w.SuperStep
+	resp = &ProgressSuperStep{
+		SuperStepNum: w.SuperStep.Id,
+		IsCheckpoint: args.IsCheckpoint,
+		IsActive:     !pendingMsgsExist && allVerticesInactive,
+	}
+
 	err := w.handleSuperStepDone()
 
 	if err != nil {
+		fmt.Println(err)
 		fmt.Printf("worker %v could not complete superstep # %v\n",
 			w.config.WorkerId, w.SuperStep.Id)
 	}
@@ -491,37 +519,17 @@ func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error 
 }
 
 func (w *Worker) handleSuperStepDone() error {
+
+	w.NextSuperStep.Id = w.SuperStep.Id + 1
+
 	fmt.Printf(
 		"Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
 		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
 	)
-	err := w.sendSuperStepDone()
-
-	if err != nil {
-		return err
-	}
 
 	w.SuperStep = w.NextSuperStep
-	w.NextSuperStep = SuperStep{}
+	w.NextSuperStep = SuperStep{Id: w.SuperStep.Id + 1}
 	return nil
-}
-
-func (w *Worker) sendSuperStepDone() error {
-
-	client, err := util.DialRPC(w.config.CoordAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Failed to establish connection with coord %v\n",
-			w.config.CoordAddr,
-		),
-	)
-	defer client.Close()
-
-	var resp SuperStepDone
-
-	// Todo determine coord RPC func method
-	err = client.Call("Coord.SuperStepDone", w.SuperStep, &resp)
-	return err
 }
 
 func (w *Worker) updateMessagesMap(msgs []Message) {
