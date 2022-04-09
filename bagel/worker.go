@@ -119,9 +119,9 @@ func (w *Worker) StartQuery(
 		startSuperStep.NumWorkers, w.config.WorkerId,
 	)
 	if err != nil {
-		fmt.Printf("error running query: %v\n", err)
-		*reply = nil
-		return err
+		fmt.Printf("error: %v\n", err)
+		err = nil  // TODO remove once db is set up!!! just for testing recovery now
+		return nil // TODO remove once db is set up!!! just for testing recovery now
 	}
 
 	var pairs []VertexPair
@@ -414,18 +414,18 @@ func (w *Worker) Start() error {
 
 	// TODO: this needs to be tested properly when workers are deployed on different machines
 	// begin checkpoints test
-	checkpoint := Checkpoint{
-		SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
-	}
-
-	checkpoint.CheckpointState[uint64(w.config.WorkerId)] = VertexCheckpoint{
-		CurrentValue: float64(w.config.WorkerId),
-		Messages:     nil,
-		IsActive:     true,
-	}
-
-	checkpoint, err = w.storeCheckpoint(checkpoint)
-	fmt.Printf("stored checkpoint: %v\n", checkpoint)
+	//checkpoint := Checkpoint{
+	//	SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
+	//}
+	//
+	//checkpoint.CheckpointState[uint64(w.config.WorkerId)] = VertexCheckpoint{
+	//	CurrentValue: float64(w.config.WorkerId),
+	//	Messages:     nil,
+	//	IsActive:     true,
+	//}
+	//
+	//checkpoint, err = w.storeCheckpoint(checkpoint)
+	//fmt.Printf("stored checkpoint: %v\n", checkpoint)
 
 	// end checkpoints test
 
@@ -436,6 +436,8 @@ func (w *Worker) Start() error {
 }
 
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
+	fmt.Printf("Worker: ComputeVertices:\n")
+
 	w.forwardMsgToVertices()
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0
 	allVerticesInactive := true
