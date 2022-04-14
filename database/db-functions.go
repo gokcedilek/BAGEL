@@ -5,33 +5,36 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/denisenkom/go-mssqldb"
 )
 
-type Node struct {
-	nodeID    uint32
-	neighbors []uint32
+type Vertex struct {
+	vertexID     uint64
+	vertexIDHash uint64
+	neighbors    []uint64
 }
 
 var db *sql.DB
-var dbName = "bagelDB"
-var tableName = "graph"
+var dbName = "bagelDB_new"
+var tableName = "adjList"
 var server = "bagel.database.windows.net"
 var port = 1433
 var user = "user"
 var password = "Distributedgraph!"
-var database = "Graph_Backup_DB"
+var database = "bagel_2.0"
 
 func main() {
+	connectToDb()
 	start := time.Now()
-	n, err := GetNode(0)
+	n, err := getVertex(490564)
 	if err != nil {
 		panic(err)
 	}
 	elapsed := time.Since(start)
-	fmt.Printf("Found node: %v in %s\n", n, elapsed)
+	fmt.Printf("Found vertex: %v in %s\n", n, elapsed)
 }
 
 func connectToDb() (*sql.DB, error) {
@@ -48,39 +51,47 @@ func connectToDb() (*sql.DB, error) {
 	return db, nil
 }
 
-func GetNode(id int) (*Node, error) {
-	_, err := connectToDb()
-	if err != nil {
-		panic(err)
-	}
+func getVertex(id int) (*Vertex, error) {
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
 	}
-
-	rows, err := db.Query("SELECT * FROM " + tableName + " WHERE vertex1 = " + strconv.Itoa(id) + ";")
+	rows, err := db.Query("SELECT * FROM " + tableName + " WHERE srcVertex = " + strconv.Itoa(id) + ";")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	// An album slice to hold data from returned rows.
-	var neighbors []uint32
-
-	// Loop through rows, using Scan to assign column data to struct fields.
-	var currId uint32
-	for rows.Next() {
-		var neighbor uint32
-		if err := rows.Scan(&currId, &neighbor); err != nil {
-			n := Node{nodeID: currId, neighbors: neighbors}
-			return &n, err
+	// Query for a value based on a single row.
+	var searchID uint64
+	var hash string
+	var neighbors string
+	qs := "SELECT * FROM " + tableName + " WHERE srcVertex = " + strconv.Itoa(id) + ";"
+	if err := db.QueryRow(qs).Scan(&searchID, &hash, &neighbors); err != nil {
+		if err == sql.ErrNoRows {
+			return &Vertex{}, fmt.Errorf("%d: unknown ID", id)
 		}
-		neighbors = append(neighbors, neighbor)
+		return &Vertex{}, fmt.Errorf("some kind of error :| %d", id)
 	}
-	n := Node{nodeID: currId, neighbors: neighbors}
-	if err = rows.Err(); err != nil {
+	hashNum, err := strconv.ParseUint(hash, 10, 64)
+	if err != nil {
+		panic("parsing hash to Uint64 failed")
+	}
+	v := Vertex{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
+	return &v, nil
+}
 
-		return &n, err
+func stringToArray(a string, delim string) []uint64 {
+	neighbors := strings.Split(a, delim)
+	neighborSlice := []uint64{}
+	if len(strings.TrimSpace(a)) == 0 {
+		return neighborSlice
 	}
-	return &n, nil
+	for _, v := range neighbors {
+		neighborID, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			panic("parsing hash to Uint64 failed")
+		}
+		neighborSlice = append(neighborSlice, neighborID)
+	}
+	return neighborSlice
 }
