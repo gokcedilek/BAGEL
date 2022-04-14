@@ -70,7 +70,6 @@ func (v *Vertex) ComputeShortestPath() []Message {
 				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
 				DestVertexId:   neighborVertex.vertexId,
-				DestHash:       0, // TODO: compute the hash or store it?
 				Value:          shortestNewPath + 1,
 			}
 			result = append(result, newMessage)
@@ -100,7 +99,6 @@ func (v *Vertex) ComputePageRank() []Message {
 				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
 				DestVertexId:   neighborVertex.vertexId,
-				DestHash:       0, // TODO: compute the hash or store it?
 				Value:          totalFlow / float64(len(v.neighbors)),
 			}
 			result = append(result, newMessage)

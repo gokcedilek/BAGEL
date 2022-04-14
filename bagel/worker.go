@@ -22,7 +22,6 @@ type Message struct {
 	SuperStepNum   uint64
 	SourceVertexId uint64
 	DestVertexId   uint64
-	DestHash       uint64
 	Value          interface{}
 }
 
@@ -438,7 +437,7 @@ func (w *Worker) Start() error {
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
 	fmt.Printf("Worker: ComputeVertices:\n")
 
-	w.updateVerticesForNewSuperStep(args.SuperStepNum)
+	w.updateVerticesWithNewStep(args.SuperStepNum)
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0
 	allVerticesInactive := true
 
@@ -505,7 +504,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	return nil
 }
 
-func (w *Worker) updateVerticesForNewSuperStep(superStepNum uint64) {
+func (w *Worker) updateVerticesWithNewStep(superStepNum uint64) {
 	for vId, v := range w.Vertices {
 		v.SuperStep = superStepNum
 		v.messages = w.SuperStep.Messages[vId]
@@ -537,7 +536,7 @@ func (w *Worker) handleSuperStepDone() error {
 
 func (w *Worker) updateMessagesMap(msgs []Message) {
 	for _, msg := range msgs {
-		destWorker := msg.DestHash % uint64(w.NumWorkers)
+		destWorker := util.HashId(msg.DestVertexId) % uint64(w.NumWorkers)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
 }
