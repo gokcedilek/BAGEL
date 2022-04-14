@@ -39,20 +39,20 @@ func (v *Vertex) Compute(queryType string) []Message {
 	var result []Message
 	switch queryType {
 	case PAGE_RANK:
-		result = ComputePageRank(v)
+		result = v.ComputePageRank()
 	case SHORTEST_PATH:
-		result = ComputeShortestPath(v)
+		result = v.ComputeShortestPath()
 	}
 	v.isActive = len(result) > 0
 	return result
 }
 
-func ComputePageRank(v *Vertex) []Message {
+func (v *Vertex) ComputePageRank() []Message {
 	result := make([]Message, 0)
 	return result
 }
 
-func ComputeShortestPath(v *Vertex) []Message {
+func (v *Vertex) ComputeShortestPath() []Message {
 	result := make([]Message, 0)
 	shortestNewPath := math.MaxInt64
 	for _, message := range v.messages {

@@ -438,7 +438,7 @@ func (w *Worker) Start() error {
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
 	fmt.Printf("Worker: ComputeVertices:\n")
 
-	w.forwardMsgToVertices()
+	w.updateVerticesForNewSuperStep(args.SuperStepNum)
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0
 	allVerticesInactive := true
 
@@ -505,8 +505,9 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	return nil
 }
 
-func (w *Worker) forwardMsgToVertices() {
+func (w *Worker) updateVerticesForNewSuperStep(superStepNum uint64) {
 	for vId, v := range w.Vertices {
+		v.SuperStep = superStepNum
 		v.messages = w.SuperStep.Messages[vId]
 	}
 }
