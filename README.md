@@ -2,6 +2,10 @@
 ## Best Algorithms for Graphs: Easy Learning
 
 A distributed graph processor based on the Pregel API. 
+Possible operations are:
+ - finding the shortest path between two vertices 
+ - finding the PageRank of a given vertex
+   - in our implementation, the sum of the PageRanks across all vertices sum to |V|
 
 ### Makefile Targets
  - `all` to build the `worker`, `coord` and `client`
@@ -16,6 +20,6 @@ A distributed graph processor based on the Pregel API.
  - Run the following in order to issue a query:
    - `./bin/coord` runs a coordinator 
    - `./bin/worker [workerId]` runs a worker node
-   - `./bin/client runs a client instance that can be used to queue up requests
+   - `./bin/client` runs a client instance that can be used to queue up requests
      - `client shortestpath {vertex1} {vertex2}` runs a shortest path calculation from vertex1 to vertex2
-     - `client pagerank {vertex}` finds the flow value of the given vertex in the stationary distribution given by the pagerank algorithm
+     - `client pagerank {vertex}` finds the PageRank of the vertex

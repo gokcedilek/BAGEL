@@ -443,7 +443,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messages := vertex.Compute()
+		messages := vertex.Compute(SHORTEST_PATH) // TODO: get the information about which computation to use
 		w.updateMessagesMap(messages)
 		if vertex.isActive {
 			allVerticesInactive = false
