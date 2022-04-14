@@ -41,6 +41,7 @@ type Worker struct {
 	NextSuperStep   SuperStep
 	Vertices        map[uint64]Vertex
 	workerDirectory WorkerDirectory
+	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
 }
 
@@ -98,6 +99,11 @@ func (w *Worker) StartQuery(
 ) error {
 
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
+	w.workerDirectory = startSuperStep.WorkerDirectory
+
+	fmt.Printf(
+		"worker %v received worker directory: %v\n",
+		w.config.WorkerId, w.workerDirectory)
 
 	// workers need to connect to the db and initialize state
 	fmt.Printf(
@@ -481,7 +487,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		batch := BatchedMessages{Batch: msgs}
 		var unused Message
 		// todo change to Go
-		err := w.workerDirectory[worker].Call("Worker.PutBatchedMessages", batch, &unused)
+		err := w.workerCallBook[worker].Call("Worker.PutBatchedMessages", batch, &unused)
 		if err != nil {
 			fmt.Printf("worker %v could not send messages to worker: %v\n",
 				w.config.WorkerId, worker)
