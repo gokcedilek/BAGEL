@@ -6,6 +6,8 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 	"net"
 	"net/rpc"
 	"os"
@@ -13,9 +15,6 @@ import (
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
-
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // Message represents an arbitrary message sent during calculation
@@ -37,10 +36,12 @@ type WorkerConfig struct {
 
 type Worker struct {
 	// Worker state may go here
-	config        WorkerConfig
-	SuperStep     SuperStep
-	NextSuperStep SuperStep
-	Vertices      map[uint64]Vertex
+	config          WorkerConfig
+	SuperStep       SuperStep
+	NextSuperStep   SuperStep
+	Vertices        map[uint64]Vertex
+	workerDirectory WorkerDirectory
+	NumWorkers      uint32
 }
 
 type Checkpoint struct {
@@ -52,8 +53,12 @@ type SuperStep struct {
 	Id           uint64
 	QueryType    string
 	Messages     map[uint64][]Message
-	Outgoing     map[uint32]uint64
+	Outgoing     map[uint32][]Message
 	IsCheckpoint bool
+}
+
+type BatchedMessages struct {
+	Batch []Message
 }
 
 func NewWorker(config WorkerConfig) *Worker {
@@ -91,11 +96,15 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *interface{},
 ) error {
+
+	w.NumWorkers = uint32(startSuperStep.NumWorkers)
+
 	// workers need to connect to the db and initialize state
 	fmt.Printf(
 		"worker %v connecting to db from %v\n", w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
+<<<<<<< HEAD
 	db, err := db_util.connectToDb()
 	defer db.Close()
 
@@ -114,43 +123,66 @@ func (w *Worker) StartQuery(
 		*reply = nil
 		return err
 	}
+=======
 
-	var pairs []VertexPair
-	for result.Next() {
-		var pair VertexPair
+	/*
+		db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
+		defer db.Close()
+>>>>>>> dbded5a7a1321ba2faec0ea24bdb271a8d639a25
 
-		err = result.Scan(&pair.srcId, &pair.destId)
 		if err != nil {
-			fmt.Printf("scan error: %v\n", err)
+			fmt.Printf("error connecting to mysql: %v\n", err)
+			*reply = nil
+			return err
 		}
 
-		// add vertex to worker state
-		if vertex, ok := w.Vertices[pair.srcId]; ok {
-			vertex.neighbors = append(
-				vertex.neighbors,
-				NeighbourVertex{
-					vertexId: pair.
-						destId,
-				},
-			)
-			w.Vertices[pair.srcId] = vertex
-		} else {
-			pianoVertex := Vertex{
-				Id:           pair.srcId,
-				neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
-				currentValue: 0,
-				messages:     nil,
-				isActive:     false,
-				workerAddr:   w.config.WorkerAddr,
-				Superstep:    0,
+		result, err := db.Query(
+			"SELECT * from graph where srcVertex % ? = ?",
+			startSuperStep.NumWorkers, w.config.WorkerId,
+		)
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			err = nil  // TODO remove once db is set up!!! just for testing recovery now
+			return nil // TODO remove once db is set up!!! just for testing recovery now
+		}
+
+		var pairs []VertexPair
+		for result.Next() {
+			var pair VertexPair
+
+			err = result.Scan(&pair.srcId, &pair.destId)
+			if err != nil {
+				fmt.Printf("scan error: %v\n", err)
 			}
-			w.Vertices[pair.srcId] = pianoVertex
-		}
-		pairs = append(pairs, pair)
-		fmt.Printf("pairs: %v\n", pairs)
-	}
 
-	fmt.Printf("vertices of worker: %v\n", w.Vertices)
+			// add vertex to worker state
+			if vertex, ok := w.Vertices[pair.srcId]; ok {
+				vertex.neighbors = append(
+					vertex.neighbors,
+					NeighbourVertex{
+						vertexId: pair.
+							destId,
+					},
+				)
+				w.Vertices[pair.srcId] = vertex
+			} else {
+				pianoVertex := Vertex{
+					Id:           pair.srcId,
+					neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
+					currentValue: 0,
+					messages:     nil,
+					isActive:     false,
+					workerAddr:   w.config.WorkerAddr,
+					SuperStep:    0,
+				}
+				w.Vertices[pair.srcId] = pianoVertex
+			}
+			pairs = append(pairs, pair)
+			fmt.Printf("pairs: %v\n", pairs)
+		}
+
+		fmt.Printf("vertices of worker: %v\n", w.Vertices)
+	*/
 
 	return nil
 }
@@ -159,7 +191,8 @@ func checkpointsSetup() (*sql.DB, error) {
 	//goland:noinspection SqlDialectInspection
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
-	  superStepNumber INTEGER NOT NULL PRIMARY KEY,
+	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, 
+-- 	  lastCheckpointNumber INTEGER NOT NULL, // TODO: use this for local setup (to be removed)
 	  checkpointState BLOB NOT NULL
 	  );`
 	db, err := sql.Open("sqlite3", "checkpoints.db")
@@ -206,7 +239,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 
 	_, err = db.Exec(
-		"INSERT INTO checkpoints VALUES(?,?)", checkpoint.SuperStepNumber,
+		"INSERT INTO checkpoints VALUES(?,?)",
+		checkpoint.SuperStepNumber,
 		buf.Bytes(),
 	)
 	if err != nil {
@@ -254,7 +288,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	defer db.Close()
 
 	res := db.QueryRow(
-		"SELECT * FROM checkpoints WHERE superStepNumber=?", superStepNumber,
+		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?", superStepNumber,
 	)
 	checkpoint := Checkpoint{}
 	var buf []byte
@@ -264,7 +298,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 		fmt.Printf("scan error: %v\n", err)
 		return Checkpoint{}, err
 	}
-	fmt.Printf("buf: %v\n", buf)
+	fmt.Printf("ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf)
 	var checkpointState map[uint64]VertexCheckpoint
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
@@ -281,9 +315,11 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	return checkpoint, nil
 }
 
+// restore state of the last saved checkpoint
 func (w *Worker) RevertToLastCheckpoint(
-	req CheckpointMsg, reply *Checkpoint,
+	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
+	fmt.Printf("Worker RevertToLastCheckpoint - worker %v received %v\n", w.config.WorkerId, req)
 	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
 	if err != nil {
 		fmt.Printf("error retrieving checkpoint: %v\n", err)
@@ -301,14 +337,9 @@ func (w *Worker) RevertToLastCheckpoint(
 			w.Vertices[k] = v
 		}
 	}
-	// TODO: call compute wrapper with new superstep #
-	/*
-		@author Ryan:
-			1) Coord -> Workers to recover to checkpoint S
-			2) Workers respond (ie. all recovered checkpoint)
-			3) Coord -> Workers proceed to Computer SS #(S + 1)
-	*/
-	*reply = checkpoint
+	fmt.Printf("vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
+
+	*reply = req
 	return nil
 }
 
@@ -365,6 +396,7 @@ func (w *Worker) Start() error {
 	conn, err := util.DialTCPCustom(
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
+
 	util.CheckErr(
 		err, fmt.Sprintf(
 			"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,
@@ -399,19 +431,77 @@ func (w *Worker) Start() error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
+	// TODO: this needs to be tested properly when workers are deployed on different machines
+	// begin checkpoints test
+	checkpoint0 := Checkpoint{
+		SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
+	}
+
+	checkpoint0.CheckpointState[uint64(1)] = VertexCheckpoint{
+		CurrentValue: 1,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint0.CheckpointState[uint64(2)] = VertexCheckpoint{
+		CurrentValue: 2,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint0, err = w.storeCheckpoint(checkpoint0)
+	fmt.Printf("stored checkpoint0: %v\n", checkpoint0)
+
+	checkpoint1 := Checkpoint{
+		SuperStepNumber: 1, CheckpointState: make(map[uint64]VertexCheckpoint),
+	}
+
+	checkpoint1.CheckpointState[uint64(3)] = VertexCheckpoint{
+		CurrentValue: 3,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint1.CheckpointState[uint64(4)] = VertexCheckpoint{
+		CurrentValue: 4,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint1, err = w.storeCheckpoint(checkpoint1)
+	fmt.Printf("stored checkpoint1: %v\n", checkpoint1)
+
+	// end checkpoints test
+
 	// go wait for work to do
 	wg.Wait()
 
 	return nil
 }
 
-func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
-	w.forwardMsgToVertices()
+func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
+	fmt.Printf("Worker: ComputeVertices:\n")
+
+	w.updateVerticesWithNewStep(args.SuperStepNum)
+	pendingMsgsExist := len(w.SuperStep.Messages) != 0
+	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messageMap := vertex.Compute()
-		w.updateMessageMap(messageMap)
+		messages := vertex.Compute(SHORTEST_PATH) // TODO: get the information about which computation to use
+		w.updateMessagesMap(messages)
+		if vertex.isActive {
+			allVerticesInactive = false
+		}
 	}
+
+	fmt.Printf("Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
+		pendingMsgsExist, allVerticesInactive)
+
+	/* TODO commented out until Vertex Compute() impl.
+	if !pendingMsgsExist && allVerticesInactive {
+		fmt.Printf("All vertices are inactive - worker is inactive.\n")
+	}
+	*/
 
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
@@ -424,63 +514,74 @@ func (w *Worker) ComputeVertices(args SuperStep, resp *SuperStep) error {
 		)
 	}
 
-	resp = &w.SuperStep
+	for worker, msgs := range w.SuperStep.Outgoing {
+
+		// local vertices
+		if worker == w.config.WorkerId {
+			w.SuperStep.Outgoing[worker] = msgs
+			continue
+		}
+
+		batch := BatchedMessages{Batch: msgs}
+		var unused Message
+		// todo change to Go
+		err := w.workerDirectory[worker].Call("Worker.PutBatchedMessages", batch, &unused)
+		if err != nil {
+			fmt.Printf("worker %v could not send messages to worker: %v\n",
+				w.config.WorkerId, worker)
+		}
+	}
+
+	resp = &ProgressSuperStep{
+		SuperStepNum: w.SuperStep.Id,
+		IsCheckpoint: args.IsCheckpoint,
+		IsActive:     !pendingMsgsExist && allVerticesInactive,
+	}
+
+	err := w.handleSuperStepDone()
+
+	if err != nil {
+		fmt.Println(err)
+		fmt.Printf("worker %v could not complete superstep # %v\n",
+			w.config.WorkerId, w.SuperStep.Id)
+	}
+
 	return nil
 }
 
-func (w *Worker) forwardMsgToVertices() {
+func (w *Worker) updateVerticesWithNewStep(superStepNum uint64) {
 	for vId, v := range w.Vertices {
-		v.messages = w.NextSuperStep.Messages[vId]
+		v.SuperStep = superStepNum
+		v.messages = w.SuperStep.Messages[vId]
 	}
 }
 
-func (w *Worker) ReceiveMessages(args Message, resp *Message) error {
-	if w.SuperStep.Id+1 != args.SuperStepNum {
-		return nil // ignore msgs not for next superstep
+func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error {
+	for _, msg := range batch.Batch {
+		w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
 	}
 
-	w.NextSuperStep.Messages[args.DestVertexId] =
-		append(w.NextSuperStep.Messages[args.DestVertexId], args)
-	resp = &args
+	resp = &Message{}
 	return nil
 }
 
 func (w *Worker) handleSuperStepDone() error {
+
+	w.NextSuperStep.Id = w.SuperStep.Id + 1
+
 	fmt.Printf(
-		"Worker %v transitioning from superstep # %d to superstep # %d\n",
+		"Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
 		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
 	)
-	err := w.sendSuperStepDone()
-
-	if err != nil {
-		return err
-	}
 
 	w.SuperStep = w.NextSuperStep
-	w.NextSuperStep = SuperStep{}
+	w.NextSuperStep = SuperStep{Id: w.SuperStep.Id + 1}
 	return nil
 }
 
-func (w *Worker) sendSuperStepDone() error {
-
-	client, err := util.DialRPC(w.config.CoordAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Failed to establish connection with coord %v\n",
-			w.config.CoordAddr,
-		),
-	)
-	defer client.Close()
-
-	var resp SuperStepDone
-
-	// Todo determine coord RPC func method
-	err = client.Call("Coord.SuperStepDone", w.SuperStep, &resp)
-	return err
-}
-
-func (w *Worker) updateMessageMap(msgMap map[uint32]uint64) {
-	for worker, numMessages := range msgMap {
-		w.SuperStep.Outgoing[worker] += numMessages
+func (w *Worker) updateMessagesMap(msgs []Message) {
+	for _, msg := range msgs {
+		destWorker := util.HashId(msg.DestVertexId) % uint64(w.NumWorkers)
+		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
 }

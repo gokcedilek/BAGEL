@@ -1,7 +1,7 @@
 {
   "WorkerId": 1,
-  "CoordAddr": "127.0.0.1:12333",
-  "WorkerAddr": "127.0.0.1:11111",
-  "WorkerListenAddr": "127.0.0.1:11112",
-  "FCheckAckLocalAddress": ":54345"
+  "CoordAddr": "thetis.students.cs.ubc.ca:12444",
+  "WorkerAddr": "thetis.students.cs.ubc.ca:11113",
+  "WorkerListenAddr": "thetis.students.cs.ubc.ca:11114",
+  "FCheckAckLocalAddress": "thetis.students.cs.ubc.ca:54345"
 }

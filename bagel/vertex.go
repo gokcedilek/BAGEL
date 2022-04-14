@@ -1,18 +1,25 @@
 package bagel
 
+import "math"
+
+const (
+	EPSILON = 1e-3
+)
+
 // Vertex stores intermediate calculation data about the vertex
 type Vertex struct {
-	Id           uint64
-	neighbors    []NeighbourVertex
-	currentValue float64
-	messages     []Message
-	isActive     bool
-	workerAddr   string
-	Superstep    uint64
+	Id             uint64
+	neighbors      []NeighbourVertex
+	previousValues map[uint64]interface{}
+	currentValue   interface{}
+	messages       []Message
+	isActive       bool
+	workerAddr     string
+	SuperStep      uint64
 }
 
 type VertexCheckpoint struct {
-	CurrentValue float64
+	CurrentValue interface{}
 	Messages     []Message
 	IsActive     bool
 }
@@ -33,6 +40,69 @@ func NewVertex() *Vertex {
 type ShortestPathVertex Vertex
 type PageRankVertex Vertex
 
-func (v *Vertex) Compute() map[uint32]uint64 {
-	return nil // stub
+func (v *Vertex) Compute(queryType string) []Message {
+	var result []Message
+	switch queryType {
+	case PAGE_RANK:
+		result = v.ComputePageRank()
+	case SHORTEST_PATH:
+		result = v.ComputeShortestPath()
+	}
+	v.isActive = len(result) > 0
+	return result
+}
+
+func (v *Vertex) ComputeShortestPath() []Message {
+	result := make([]Message, 0)
+	shortestNewPath := math.MaxInt64
+	for _, message := range v.messages {
+		pathLength := message.Value.(int) // cast to an int
+		v.previousValues[message.SourceVertexId] = pathLength
+		if pathLength < shortestNewPath {
+			shortestNewPath = pathLength
+		}
+	}
+
+	if shortestNewPath < v.currentValue.(int) {
+		v.currentValue = shortestNewPath
+		for _, neighborVertex := range v.neighbors {
+			newMessage := Message{
+				SuperStepNum:   v.SuperStep,
+				SourceVertexId: v.Id,
+				DestVertexId:   neighborVertex.vertexId,
+				Value:          shortestNewPath + 1,
+			}
+			result = append(result, newMessage)
+		}
+	}
+	return result
+}
+
+func (v *Vertex) ComputePageRank() []Message {
+	// update flow values
+	for _, message := range v.messages {
+		flowValue := message.Value.(float64) // cast to an int
+		v.previousValues[message.SourceVertexId] = flowValue
+	}
+
+	// calculate new value
+	totalFlow := 0.15
+	for _, flowValue := range v.previousValues {
+		totalFlow += flowValue.(float64)
+	}
+
+	// update neighbors if the change is large enough
+	result := make([]Message, 0)
+	if math.Abs(totalFlow-v.currentValue.(float64)) > EPSILON {
+		for _, neighborVertex := range v.neighbors {
+			newMessage := Message{
+				SuperStepNum:   v.SuperStep,
+				SourceVertexId: v.Id,
+				DestVertexId:   neighborVertex.vertexId,
+				Value:          totalFlow / float64(len(v.neighbors)),
+			}
+			result = append(result, newMessage)
+		}
+	}
+	return result
 }

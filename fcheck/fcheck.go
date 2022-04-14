@@ -121,7 +121,7 @@ func MonitorRoutine(
 	if err != nil {
 		return
 	}
-	fmt.Printf("fcheck: MonitorRoutine: sent first heartbeat: %v\n", hbeatMsg)
+	//fmt.Printf("fcheck: MonitorRoutine: sent first heartbeat: %v\n", hbeatMsg)
 
 	for {
 		select {
@@ -202,7 +202,7 @@ func MonitorRoutine(
 				fmt.Printf("fcheck: MonitorRoutine: decode error: %v\n", decodeErr)
 				return
 			}
-			fmt.Printf("fcheck: MonitorRoutine: received ack: %v\n", ack)
+			//fmt.Printf("fcheck: MonitorRoutine: received ack: %v\n", ack)
 			readAck <- ack
 		}
 	}
