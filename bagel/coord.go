@@ -40,8 +40,7 @@ type Coord struct {
 	superStepNumber       uint64
 	workerDone            chan *rpc.Call
 	allWorkersReady       chan bool
-	//notifyCh              <-chan fchecker.FailureDetected
-	restartSuperStepCh chan bool
+	restartSuperStepCh    chan bool
 }
 
 func NewCoord() *Coord {
@@ -148,7 +147,6 @@ func (c *Coord) checkWorkersReady(
 func (c *Coord) UpdateCheckpoint(
 	msg CheckpointMsg, reply *CheckpointMsg,
 ) error {
-	//fmt.Printf("called update checkpoint with msg: %v\n", msg)
 	// save the last SuperStep # checkpointed by this worker
 	c.lastWorkerCheckpoints[msg.WorkerId] = msg.SuperStepNumber
 
@@ -160,11 +158,9 @@ func (c *Coord) UpdateCheckpoint(
 			break
 		}
 	}
-	//fmt.Printf("coord checkpoints map: %v\n", c.lastWorkerCheckpoints)
 
 	if allWorkersUpdated {
 		c.lastCheckpointNumber = msg.SuperStepNumber
-		//fmt.Printf("coord all workers updated: %v\n", c.lastCheckpointNumber)
 	}
 
 	*reply = msg
@@ -185,7 +181,7 @@ func (c *Coord) Compute() (int, error) {
 			fmt.Printf("worker failed: %s\n", notify)
 			c.restartCheckpoint()
 		default:
-			fmt.Printf("Coord-running compute\n")
+			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
 			time.Sleep(3 * time.Second)
 		}
 	}
@@ -284,7 +280,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		fmt.Printf(
 			"Coord: JoinWorker: Successfully re-added Worker %d after failure\n",
 			w.WorkerId)
-		c.queryWorkers[w.WorkerId] = client // TODO: do we also need to add to c.workers?
+		c.queryWorkers[w.WorkerId] = client
 		c.workers[w.WorkerId] = client
 
 		checkpointNumber := c.lastCheckpointNumber
@@ -352,14 +348,12 @@ func (c *Coord) monitor(w WorkerNode) {
 	if err != nil || notifyCh == nil {
 		fmt.Printf("fchecker failed to connect\n")
 	}
-	//c.notifyCh = notifyCh
 
 	fmt.Printf("Coord: monitor: Fcheck for Worker %d running\n", w.WorkerId)
 	for {
 		select {
-		case notify := <-notifyCh: // make notifyCh part of coord state, add this for loop to the beg of compute()
+		case notify := <-notifyCh:
 			fmt.Printf("worker %v failed: %s\n", w.WorkerId, notify)
-			//c.restartCheckpoint()
 			c.restartSuperStepCh <- true
 		}
 	}
