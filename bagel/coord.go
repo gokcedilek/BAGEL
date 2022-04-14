@@ -29,8 +29,9 @@ type Coord struct {
 	clientAPIListenAddr   string
 	workerAPIListenAddr   string
 	lostMsgsThresh        uint8
-	workers               map[uint32]*rpc.Client // worker id --> worker connection
-	queryWorkers          map[uint32]*rpc.Client // workers in use for current query - will be updated at start of query
+	workers               WorkerCallBook // worker id --> worker connection
+	queryWorkers          WorkerCallBook // workers in use for current query - will be updated at start of query
+	queryWorkersDirectory WorkerDirectory
 	workersMutex          sync.Mutex
 	lastCheckpointNumber  uint64
 	lastWorkerCheckpoints map[uint32]uint64
@@ -51,6 +52,8 @@ func NewCoord() *Coord {
 		lastWorkerCheckpoints: make(map[uint32]uint64),
 		workers:               make(map[uint32]*rpc.Client),
 		checkpointFrequency:   1,
+		queryWorkers:          make(WorkerCallBook),
+		queryWorkersDirectory: make(WorkerDirectory),
 	}
 }
 
@@ -77,7 +80,10 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	c.lastWorkerCheckpoints = make(map[uint32]uint64)
 
 	// call workers query handler
-	startSuperStep := StartSuperStep{NumWorkers: uint8(len(c.queryWorkers))}
+	startSuperStep := StartSuperStep{
+		NumWorkers:      uint8(len(c.queryWorkers)),
+		WorkerDirectory: c.queryWorkersDirectory,
+	}
 	numWorkers := len(c.queryWorkers)
 	c.workerDone = make(chan *rpc.Call, numWorkers)
 	c.allWorkersReady = make(chan bool, 1)
@@ -254,6 +260,8 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		)
 		return err
 	}
+
+	c.queryWorkersDirectory[w.WorkerId] = w.WorkerListenAddr
 
 	go c.monitor(w)
 
