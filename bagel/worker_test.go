@@ -27,13 +27,14 @@ func TestComputeShortestPathOneNeighbor(t *testing.T) {
 
 func createNewTestVertex(initialVal interface{}) Vertex {
 	vertex := Vertex{
-		Id:           TEST_VERTEX_ID,
-		neighbors:    make([]NeighbourVertex, 0),
-		currentValue: initialVal,
-		messages:     make([]Message, 0),
-		isActive:     true,
-		workerAddr:   "",
-		SuperStep:    TEST_SUPERSTEP,
+		Id:             TEST_VERTEX_ID,
+		neighbors:      make([]NeighbourVertex, 0),
+		previousValues: make(map[uint64]interface{}),
+		currentValue:   initialVal,
+		messages:       make([]Message, 0),
+		isActive:       true,
+		workerAddr:     "",
+		SuperStep:      TEST_SUPERSTEP,
 	}
 	return vertex
 }
