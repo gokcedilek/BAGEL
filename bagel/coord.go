@@ -183,46 +183,33 @@ func (c *Coord) Compute() (int, error) {
 		default:
 			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
 			time.Sleep(3 * time.Second)
+			// TODO: @Ryan need to check
+			//shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
+			//// call workers query handler
+			//progressSuperStep := ProgressSuperStep{
+			//	SuperStepNum: c.superStepNumber,
+			//	IsCheckpoint: shouldCheckPoint,
+			//}
+			//go c.checkWorkersReady(numWorkers)
+			//fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
+			//	c.superStepNumber, shouldCheckPoint)
+			//
+			//for _, wClient := range c.queryWorkers {
+			//	var result ProgressSuperStep
+			//	wClient.Go(
+			//		"Worker.ComputeVertices", progressSuperStep, &result,
+			//		c.workerDone,
+			//	)
+			//}
+			//
+			//select {
+			//case <-c.allWorkersReady:
+			//	fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
+			//}
+			//c.superStepNumber += 1
+
 		}
 	}
-	//for i := 0; i < 5; i++ {
-	//	// for {
-	//
-	//	fmt.Printf("Coord - compute running i=%v\n", i)
-	//	//shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
-	//
-	//	// call workers query handler
-	//	//progressSuperStep := ProgressSuperStep{
-	//	//	SuperStepNum: c.superStepNumber,
-	//	//	IsCheckpoint: shouldCheckPoint,
-	//	//}
-	//	//
-	//	////c.workerDone = make(chan *rpc.Call, numWorkers)
-	//	////c.allWorkersReady = make(chan bool, 1)
-	//	//go c.checkWorkersReady(numWorkers)
-	//	//
-	//	//fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
-	//	//	c.superStepNumber, shouldCheckPoint)
-	//	//
-	//	//for _, wClient := range c.queryWorkers {
-	//	//	var result ProgressSuperStep
-	//	//	wClient.Go(
-	//	//		"Worker.ComputeVertices", progressSuperStep, &result,
-	//	//		c.workerDone,
-	//	//	)
-	//	//}
-	//
-	//	// TODO: for testing workers joining during query, remove
-	//	time.Sleep(3 * time.Second)
-	//
-	//	//select {
-	//	//case <-c.allWorkersReady:
-	//	//	fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
-	//	//}
-	//
-	//	c.superStepNumber += 1
-	//
-	//}
 	fmt.Printf("Coord: Compute: compute query returning result\n")
 	return -1, nil
 }
@@ -249,12 +236,7 @@ func (c *Coord) restartCheckpoint() {
 	case <-c.allWorkersReady:
 		fmt.Printf("Coord: restart checkpoint: received all %d workers!\n", numWorkers)
 		// continue query from the last checkpoint
-		c.superStepNumber = c.lastCheckpointNumber + 1 // reset superstep number
-		//result, err := c.Compute()
-		//if err != nil {
-		//	fmt.Println(fmt.Sprintf("Coord: Compute err: %v", err))
-		//}
-		// TODO: ask about this part: after setting c.superstepNumber, call compute?
+		c.superStepNumber = c.lastCheckpointNumber + 1
 	}
 
 }
