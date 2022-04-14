@@ -105,61 +105,63 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
-	defer db.Close()
+	/*
+		db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
+		defer db.Close()
 
-	if err != nil {
-		fmt.Printf("error connecting to mysql: %v\n", err)
-		*reply = nil
-		return err
-	}
-
-	result, err := db.Query(
-		"SELECT * from graph where srcVertex % ? = ?",
-		startSuperStep.NumWorkers, w.config.WorkerId,
-	)
-	if err != nil {
-		fmt.Printf("error: %v\n", err)
-		err = nil  // TODO remove once db is set up!!! just for testing recovery now
-		return nil // TODO remove once db is set up!!! just for testing recovery now
-	}
-
-	var pairs []VertexPair
-	for result.Next() {
-		var pair VertexPair
-
-		err = result.Scan(&pair.srcId, &pair.destId)
 		if err != nil {
-			fmt.Printf("scan error: %v\n", err)
+			fmt.Printf("error connecting to mysql: %v\n", err)
+			*reply = nil
+			return err
 		}
 
-		// add vertex to worker state
-		if vertex, ok := w.Vertices[pair.srcId]; ok {
-			vertex.neighbors = append(
-				vertex.neighbors,
-				NeighbourVertex{
-					vertexId: pair.
-						destId,
-				},
-			)
-			w.Vertices[pair.srcId] = vertex
-		} else {
-			pianoVertex := Vertex{
-				Id:           pair.srcId,
-				neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
-				currentValue: 0,
-				messages:     nil,
-				isActive:     false,
-				workerAddr:   w.config.WorkerAddr,
-				SuperStep:    0,
+		result, err := db.Query(
+			"SELECT * from graph where srcVertex % ? = ?",
+			startSuperStep.NumWorkers, w.config.WorkerId,
+		)
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			err = nil  // TODO remove once db is set up!!! just for testing recovery now
+			return nil // TODO remove once db is set up!!! just for testing recovery now
+		}
+
+		var pairs []VertexPair
+		for result.Next() {
+			var pair VertexPair
+
+			err = result.Scan(&pair.srcId, &pair.destId)
+			if err != nil {
+				fmt.Printf("scan error: %v\n", err)
 			}
-			w.Vertices[pair.srcId] = pianoVertex
-		}
-		pairs = append(pairs, pair)
-		fmt.Printf("pairs: %v\n", pairs)
-	}
 
-	fmt.Printf("vertices of worker: %v\n", w.Vertices)
+			// add vertex to worker state
+			if vertex, ok := w.Vertices[pair.srcId]; ok {
+				vertex.neighbors = append(
+					vertex.neighbors,
+					NeighbourVertex{
+						vertexId: pair.
+							destId,
+					},
+				)
+				w.Vertices[pair.srcId] = vertex
+			} else {
+				pianoVertex := Vertex{
+					Id:           pair.srcId,
+					neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
+					currentValue: 0,
+					messages:     nil,
+					isActive:     false,
+					workerAddr:   w.config.WorkerAddr,
+					SuperStep:    0,
+				}
+				w.Vertices[pair.srcId] = pianoVertex
+			}
+			pairs = append(pairs, pair)
+			fmt.Printf("pairs: %v\n", pairs)
+		}
+
+		fmt.Printf("vertices of worker: %v\n", w.Vertices)
+	*/
 
 	return nil
 }
@@ -292,10 +294,11 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	return checkpoint, nil
 }
 
+// restore state of the last saved checkpoint
 func (w *Worker) RevertToLastCheckpoint(
-	req RestartSuperStep, reply *interface{},
+	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
-	fmt.Printf("worker %v received %v\n", w.config.WorkerId, req)
+	fmt.Printf("Worker RevertToLastCheckpoint - worker %v received %v\n", w.config.WorkerId, req)
 	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
 	if err != nil {
 		fmt.Printf("error retrieving checkpoint: %v\n", err)
@@ -314,13 +317,8 @@ func (w *Worker) RevertToLastCheckpoint(
 		}
 	}
 	fmt.Printf("vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
-	// TODO: call compute wrapper with new superstep #
-	/*
-		@author Ryan:
-			1) Coord -> Workers to recover to checkpoint S
-			2) Workers respond (ie. all recovered checkpoint)
-			3) Coord -> Workers proceed to Computer SS #(S + 1)
-	*/
+
+	*reply = req
 	return nil
 }
 
@@ -414,18 +412,43 @@ func (w *Worker) Start() error {
 
 	// TODO: this needs to be tested properly when workers are deployed on different machines
 	// begin checkpoints test
-	//checkpoint := Checkpoint{
-	//	SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
-	//}
-	//
-	//checkpoint.CheckpointState[uint64(w.config.WorkerId)] = VertexCheckpoint{
-	//	CurrentValue: float64(w.config.WorkerId),
-	//	Messages:     nil,
-	//	IsActive:     true,
-	//}
-	//
-	//checkpoint, err = w.storeCheckpoint(checkpoint)
-	//fmt.Printf("stored checkpoint: %v\n", checkpoint)
+	checkpoint0 := Checkpoint{
+		SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
+	}
+
+	checkpoint0.CheckpointState[uint64(1)] = VertexCheckpoint{
+		CurrentValue: 1,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint0.CheckpointState[uint64(2)] = VertexCheckpoint{
+		CurrentValue: 2,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint0, err = w.storeCheckpoint(checkpoint0)
+	fmt.Printf("stored checkpoint0: %v\n", checkpoint0)
+
+	checkpoint1 := Checkpoint{
+		SuperStepNumber: 1, CheckpointState: make(map[uint64]VertexCheckpoint),
+	}
+
+	checkpoint1.CheckpointState[uint64(3)] = VertexCheckpoint{
+		CurrentValue: 3,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint1.CheckpointState[uint64(4)] = VertexCheckpoint{
+		CurrentValue: 4,
+		Messages:     nil,
+		IsActive:     true,
+	}
+
+	checkpoint1, err = w.storeCheckpoint(checkpoint1)
+	fmt.Printf("stored checkpoint1: %v\n", checkpoint1)
 
 	// end checkpoints test
 
