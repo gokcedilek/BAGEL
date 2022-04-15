@@ -27,7 +27,7 @@ func main() {
 	fmt.Printf("Found vertex: %v in %s\n", n, elapsed)
 }
 
-func connectToDb() (*sql.DB, error) {
+func getDBConnection() (*sql.DB, error) {
 	// Build connection string
 	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;",
 		server, user, password, port, database)
@@ -41,8 +41,8 @@ func connectToDb() (*sql.DB, error) {
 	return db, nil
 }
 
-func getVertex(id int) (*DBVertexResult, error) {
-	connectToDb()
+func getVertexById(id int) (*DBVertexResult, error) {
+	getDBConnection()
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
@@ -67,12 +67,12 @@ func getVertex(id int) (*DBVertexResult, error) {
 	if err != nil {
 		panic("parsing hash to Uint64 failed")
 	}
-	v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
+	v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, neighbors: convertStringToArray(neighbors, ".")}
 	return &v, nil
 }
 
 func GetVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, error) {
-	connectToDb()
+	getDBConnection()
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
@@ -96,14 +96,14 @@ func GetVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, err
 		if err != nil {
 			panic("parsing hash to Uint64 failed")
 		}
-		v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
+		v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, Neighbors: convertStringToArray(neighbors, ".")}
 		vertices = append(vertices, v)
 	}
 
 	return vertices, nil
 }
 
-func stringToArray(a string, delim string) []uint64 {
+func convertStringToArray(a string, delim string) []uint64 {
 	neighbors := strings.Split(a, delim)
 	neighborSlice := []uint64{}
 	if len(strings.TrimSpace(a)) == 0 {
