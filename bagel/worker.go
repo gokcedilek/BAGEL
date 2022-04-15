@@ -89,7 +89,7 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 	if err != nil {
 		fchecker.Stop()
 		util.CheckErr(
-			err, fmt.Sprintf("fchecker for Worker %d failed", workerId),
+			err, "fchecker for Worker %d failed", workerId,
 		)
 	}
 
@@ -203,11 +203,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"worker %v could not dial coord addr %v\n", w.config.WorkerAddr,
-			w.config.CoordAddr,
-		),
+	util.CheckErr(err,
+		"worker %v could not dial coord addr %v\n", w.config.WorkerAddr, w.config.CoordAddr,
 	)
 
 	checkpointMsg := CheckpointMsg{
@@ -218,10 +215,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	var reply CheckpointMsg
 	log.Printf("storeCheckpoints: calling coord with checkpointMsg: %v\n", checkpointMsg)
 	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
-		),
+	util.CheckErr(err,
+		"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
 	)
 
 	log.Printf("storeCheckpoints: called coord update cp: %v\n", reply)
@@ -296,27 +291,18 @@ func (w *Worker) RevertToLastCheckpoint(
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
 	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.WorkerListenAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Worker %v could not resolve WorkerListenAddr: %v",
-			w.config.WorkerId,
-			w.config.WorkerListenAddr,
-		),
+	util.CheckErr(err,
+		"Worker %v could not resolve WorkerListenAddr: %v", w.config.WorkerId, w.config.WorkerListenAddr,
 	)
 	listen, err := net.ListenTCP("tcp", listenAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Worker %v could not listen on listenAddr: %v", w.config.WorkerId,
-			listenAddr,
-		),
+	util.CheckErr(err,
+		"Worker %v could not listen on listenAddr: %v", w.config.WorkerId, listenAddr,
 	)
 
 	for {
 		conn, err := listen.Accept()
-		util.CheckErr(
-			err, fmt.Sprintf(
-				"Worker %v could not accept connections\n", w.config.WorkerId,
-			),
+		util.CheckErr(err,
+			"Worker %v could not accept connections\n", w.config.WorkerId,
 		)
 		go handler.ServeConn(conn)
 	}
@@ -348,11 +334,8 @@ func (w *Worker) Start() error {
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
 
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,
-			w.config.CoordAddr,
-		),
+	util.CheckErr(err,
+		"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId, w.config.CoordAddr,
 	)
 
 	defer conn.Close()
@@ -371,7 +354,7 @@ func (w *Worker) Start() error {
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
 	util.CheckErr(
-		err, fmt.Sprintf("Start: Worker %v could not join\n", w.config.WorkerId),
+		err, "Start: Worker %v could not join\n", w.config.WorkerId,
 	)
 
 	log.Printf(
@@ -420,7 +403,7 @@ func (w *Worker) Start() error {
 	}
 
 	checkpoint1, err = w.storeCheckpoint(checkpoint1)
-	fmt.Printf("stored checkpoint1: %v\n", checkpoint1)
+	log.Printf("stored checkpoint1: %v\n", checkpoint1)
 
 	// end checkpoints test
 
@@ -457,11 +440,8 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
 		_, err := w.storeCheckpoint(checkpoint)
-		util.CheckErr(
-			err, fmt.Sprintf(
-				"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
-				w.SuperStep.Id,
-			),
+		util.CheckErr(err,
+			"Worker %v failed to checkpoint # %v\n", w.config.WorkerId, w.SuperStep.Id,
 		)
 	}
 
