@@ -8,6 +8,7 @@ import (
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
+	"log"
 	"net"
 	"net/rpc"
 	"os"
@@ -75,7 +76,7 @@ func NewWorker(config WorkerConfig) *Worker {
 }
 
 func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
-	fmt.Printf("Starting fcheck for worker %d\n", workerId)
+	log.Printf("StartFCheckHBeat for worker %d\n", workerId)
 
 	fcheckConfig := fchecker.StartStruct{
 		AckLocalIPAckLocalPort: ackAddress,
@@ -100,13 +101,13 @@ func (w *Worker) StartQuery(
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
 
-	fmt.Printf(
-		"worker %v received worker directory: %v\n",
+	log.Printf(
+		"StartQuery: worker %v received worker directory: %v\n",
 		w.config.WorkerId, w.workerDirectory)
 
 	// workers need to connect to the db and initialize state
-	fmt.Printf(
-		"worker %v connecting to db from %v\n", w.config.WorkerId,
+	log.Printf(
+		"StartQuery: worker %v connecting to db from %v\n", w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
 
@@ -114,8 +115,13 @@ func (w *Worker) StartQuery(
 		db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
 		defer db.Close()
 
+	if err != nil {
+		log.Printf("StartQuery: error connecting to mysql: %v\n", err)
+		*reply = nil
+		return err
+	}
 		if err != nil {
-			fmt.Printf("error connecting to mysql: %v\n", err)
+			log.Printf("error connecting to mysql: %v\n", err)
 			*reply = nil
 			return err
 		}
@@ -125,7 +131,7 @@ func (w *Worker) StartQuery(
 			startSuperStep.NumWorkers, w.config.WorkerId,
 		)
 		if err != nil {
-			fmt.Printf("error: %v\n", err)
+			log.Printf("error: %v\n", err)
 			err = nil  // TODO remove once db is set up!!! just for testing recovery now
 			return nil // TODO remove once db is set up!!! just for testing recovery now
 		}
@@ -136,7 +142,7 @@ func (w *Worker) StartQuery(
 
 			err = result.Scan(&pair.srcId, &pair.destId)
 			if err != nil {
-				fmt.Printf("scan error: %v\n", err)
+				log.Printf("scan error: %v\n", err)
 			}
 
 			// add vertex to worker state
@@ -162,10 +168,10 @@ func (w *Worker) StartQuery(
 				w.Vertices[pair.srcId] = pianoVertex
 			}
 			pairs = append(pairs, pair)
-			fmt.Printf("pairs: %v\n", pairs)
+			log.Printf("pairs: %v\n", pairs)
 		}
 
-		fmt.Printf("vertices of worker: %v\n", w.Vertices)
+		log.Printf("vertices of worker: %v\n", w.Vertices)
 	*/
 
 	return nil
@@ -181,12 +187,12 @@ func checkpointsSetup() (*sql.DB, error) {
 	  );`
 	db, err := sql.Open("sqlite3", "checkpoints.db")
 	if err != nil {
-		fmt.Printf("Failed to open database: %v\n", err)
+		log.Printf("checkpointsSetup: Failed to open database: %v\n", err)
 		return nil, err
 	}
 
 	if _, err := db.Exec(createCheckpoints); err != nil {
-		fmt.Printf("Failed execute command: %v\n", err)
+		log.Printf("checkpointsSetup: Failed execute command: %v\n", err)
 		return nil, err
 	}
 
@@ -219,7 +225,7 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 
 	var buf bytes.Buffer
 	if err = gob.NewEncoder(&buf).Encode(checkpoint.CheckpointState); err != nil {
-		fmt.Printf("encode error: %v\n", err)
+		log.Printf("storeCheckpoint: encode error: %v\n", err)
 	}
 
 	_, err = db.Exec(
@@ -228,10 +234,10 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		buf.Bytes(),
 	)
 	if err != nil {
-		fmt.Printf("error inserting into db: %v\n", err)
+		log.Printf("storeCheckpoint: error inserting into db: %v\n", err)
 	}
-	fmt.Printf(
-		"inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes(),
+	log.Printf(
+		"storeCheckpoints: inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes(),
 	)
 
 	// notify coord about the latest checkpoint saved
@@ -249,15 +255,15 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 
 	var reply CheckpointMsg
-	fmt.Printf("calling coord update cp: %v\n", checkpointMsg)
+	log.Printf("storeCheckpoints: calling coord with checkpointMsg: %v\n", checkpointMsg)
 	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
 	util.CheckErr(
 		err, fmt.Sprintf(
-			"worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
+			"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
 		),
 	)
 
-	fmt.Printf("called coord update cp: %v\n", reply)
+	log.Printf("storeCheckpoints: called coord update cp: %v\n", reply)
 
 	return checkpoint, nil
 }
@@ -279,20 +285,20 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	if err := res.Scan(
 		&checkpoint.SuperStepNumber, &buf,
 	); err == sql.ErrNoRows {
-		fmt.Printf("scan error: %v\n", err)
+		log.Printf("retrieveCheckpoint: scan error: %v\n", err)
 		return Checkpoint{}, err
 	}
-	fmt.Printf("ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf)
+	log.Printf("retrieveCheckpoint: ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf)
 	var checkpointState map[uint64]VertexCheckpoint
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
-		fmt.Printf("decode error: %v, tmp: %v\n", err, checkpointState)
+		log.Printf("retrieveCheckpoint: decode error: %v, tmp: %v\n", err, checkpointState)
 		return Checkpoint{}, err
 	}
 	checkpoint.CheckpointState = checkpointState
 
-	fmt.Printf(
-		"read ssn: %v, state: %v\n", checkpoint.SuperStepNumber,
+	log.Printf(
+		"retrieveCheckpoint: read ssn: %v, state: %v\n", checkpoint.SuperStepNumber,
 		checkpoint.CheckpointState,
 	)
 
@@ -303,25 +309,25 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
-	fmt.Printf("Worker RevertToLastCheckpoint - worker %v received %v\n", w.config.WorkerId, req)
+	log.Printf("RevertToLastCheckpoint: worker %v received %v\n", w.config.WorkerId, req)
 	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
 	if err != nil {
-		fmt.Printf("error retrieving checkpoint: %v\n", err)
+		log.Printf("RevertToLastCheckpoint: error retrieving checkpoint: %v\n", err)
 		return err
 	}
-	fmt.Printf("retrieved checkpoint: %v\n", checkpoint)
+	log.Printf("RevertToLastCheckpoint: retrieved checkpoint: %v\n", checkpoint)
 
 	w.SuperStep.Id = checkpoint.SuperStepNumber
 	for k, v := range w.Vertices {
 		if state, found := checkpoint.CheckpointState[v.Id]; found {
-			fmt.Printf("found state: %v\n", state)
+			log.Printf("RevertToLastCheckpoint: found state: %v\n", state)
 			v.currentValue = state.CurrentValue
 			v.isActive = state.IsActive
 			v.messages = state.Messages
 			w.Vertices[k] = v
 		}
 	}
-	fmt.Printf("vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
+	log.Printf("RevertToLastCheckpoint: vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
 
 	*reply = req
 	return nil
@@ -360,7 +366,7 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 func (w *Worker) register() {
 	handler := rpc.NewServer()
 	err := handler.Register(w)
-	fmt.Printf(
+	log.Printf(
 		"register: Worker %v - register error: %v\n", w.config.WorkerId, err,
 	)
 
@@ -394,7 +400,7 @@ func (w *Worker) Start() error {
 	hBeatAddr := w.startFCheckHBeat(
 		w.config.WorkerId, w.config.FCheckAckLocalAddress,
 	)
-	fmt.Printf("hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr)
+	log.Printf("Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr)
 
 	workerNode := WorkerNode{
 		w.config.WorkerId, w.config.WorkerAddr,
@@ -404,11 +410,11 @@ func (w *Worker) Start() error {
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
 	util.CheckErr(
-		err, fmt.Sprintf("Worker %v could not join\n", w.config.WorkerId),
+		err, fmt.Sprintf("Start: Worker %v could not join\n", w.config.WorkerId),
 	)
 
-	fmt.Printf(
-		"Worker: Start: worker %v joined to coord successfully\n",
+	log.Printf(
+		"Start: worker %v joined to coord successfully\n",
 		w.config.WorkerId,
 	)
 
@@ -434,7 +440,7 @@ func (w *Worker) Start() error {
 	}
 
 	checkpoint0, err = w.storeCheckpoint(checkpoint0)
-	fmt.Printf("stored checkpoint0: %v\n", checkpoint0)
+	log.Printf("stored checkpoint0: %v\n", checkpoint0)
 
 	checkpoint1 := Checkpoint{
 		SuperStepNumber: 1, CheckpointState: make(map[uint64]VertexCheckpoint),
@@ -464,7 +470,7 @@ func (w *Worker) Start() error {
 }
 
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
-	fmt.Printf("Worker: ComputeVertices:\n")
+	log.Printf("ComputeVertices\n")
 
 	w.updateVerticesWithNewStep(args.SuperStepNum)
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0
@@ -478,12 +484,12 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		}
 	}
 
-	fmt.Printf("Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
+	log.Printf("ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
 		pendingMsgsExist, allVerticesInactive)
 
 	/* TODO commented out until Vertex Compute() impl.
 	if !pendingMsgsExist && allVerticesInactive {
-		fmt.Printf("All vertices are inactive - worker is inactive.\n")
+		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
 	}
 	*/
 
@@ -511,7 +517,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		// todo change to Go
 		err := w.workerCallBook[worker].Call("Worker.PutBatchedMessages", batch, &unused)
 		if err != nil {
-			fmt.Printf("worker %v could not send messages to worker: %v\n",
+			log.Printf("ComputeVertices: worker %v could not send messages to worker: %v\n",
 				w.config.WorkerId, worker)
 		}
 	}
@@ -525,8 +531,8 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	err := w.handleSuperStepDone()
 
 	if err != nil {
-		fmt.Println(err)
-		fmt.Printf("worker %v could not complete superstep # %v\n",
+		log.Printf("ComputeVertices: err: %v\n", err)
+		log.Printf("ComputeVertices: worker %v could not complete superstep # %v\n",
 			w.config.WorkerId, w.SuperStep.Id)
 	}
 
@@ -553,8 +559,8 @@ func (w *Worker) handleSuperStepDone() error {
 
 	w.NextSuperStep.Id = w.SuperStep.Id + 1
 
-	fmt.Printf(
-		"Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
+	log.Printf(
+		"handleSuperStepDone: Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
 		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
 	)
 
