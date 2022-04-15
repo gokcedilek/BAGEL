@@ -10,7 +10,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
-	database "project/database"
+	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
@@ -197,9 +197,6 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	if err != nil {
 		log.Printf("storeCheckpoint: error inserting into db: %v\n", err)
 	}
-	log.Printf(
-		"storeCheckpoints: inserted ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf.Bytes(),
-	)
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
@@ -218,8 +215,6 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	util.CheckErr(err,
 		"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
 	)
-
-	log.Printf("storeCheckpoints: called coord update cp: %v\n", reply)
 
 	return checkpoint, nil
 }
@@ -244,7 +239,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 		log.Printf("retrieveCheckpoint: scan error: %v\n", err)
 		return Checkpoint{}, err
 	}
-	log.Printf("retrieveCheckpoint: ssn: %v, buf: %v\n", checkpoint.SuperStepNumber, buf)
+
 	var checkpointState map[uint64]VertexCheckpoint
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
@@ -414,7 +409,7 @@ func (w *Worker) Start() error {
 }
 
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
-	log.Printf("ComputeVertices\n")
+	log.Printf("wComputeVertices - worker %v\n", w.config.WorkerId)
 
 	w.updateVerticesWithNewStep(args.SuperStepNum)
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0

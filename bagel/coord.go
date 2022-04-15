@@ -36,14 +36,22 @@ type Coord struct {
 	workersMutex          sync.Mutex
 	lastCheckpointNumber  uint64
 	lastWorkerCheckpoints map[uint32]uint64
-	workerCounter         int
+	readyWorkerCounter    int
+	failedWorkerCounter   int
 	workerCounterMutex    sync.Mutex
 	checkpointFrequency   int
 	superStepNumber       uint64
-	workerDone            chan *rpc.Call
+	workerDoneStart       chan *rpc.Call // done messages for Worker.StartQuery RPC
+	workerDoneCompute     chan *rpc.Call // done messages for Worker.ComputeVertices RPC
+	workerDoneRestart     chan *rpc.Call // done messages for Worker.RevertToLastCheckpoint RPC
 	allWorkersReady       chan bool
 	restartSuperStepCh    chan bool
 }
+
+/*
+workerDone chan *rpc.Call
+resetWorkerCounter chan bool --> used by fcheck
+*/
 
 func NewCoord() *Coord {
 	return &Coord{
@@ -86,26 +94,21 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 		WorkerDirectory: c.queryWorkersDirectory,
 	}
 	numWorkers := len(c.queryWorkers)
-	c.workerDone = make(chan *rpc.Call, numWorkers)
+	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
+	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
+	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
 	c.allWorkersReady = make(chan bool, 1)
 
 	log.Printf("StartQuery: computing query %v with %d workers ready!\n", q, numWorkers)
 
-	go c.checkWorkersReady(numWorkers)
 	for _, wClient := range c.queryWorkers {
 		var result interface{}
 		wClient.Go(
 			"Worker.StartQuery", startSuperStep, &result,
-			c.workerDone,
+			c.workerDoneStart,
 		)
 	}
 
-	select {
-	case <-c.allWorkersReady:
-		log.Printf("StartQuery: received all %d workers ready!\n", numWorkers)
-	}
-
-	// TODO: invoke another function to handle the rest of the request
 	result, err := c.Compute()
 	if err != nil {
 		log.Printf("StartQuery: Compute returned err: %v", err)
@@ -114,37 +117,32 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	reply.Query = q
 	reply.Result = result
 
-	//c.queryWorkers = nil
+	c.queryWorkers = nil
 
 	// return nil for no errors
 	return nil
 }
 
-// check if all workers are notified by coord
-func (c *Coord) checkWorkersReady(
-	numWorkers int) {
+func (c *Coord) blockWorkersReady(
+	numWorkers int, workerDone chan *rpc.Call) {
+	readyWorkerCounter := 0
 
 	for {
 		select {
-		case call := <-c.workerDone:
-			log.Printf("checkWorkersReady: received reply: %v\n", call.Reply)
+		case call := <-workerDone:
+			log.Printf("blockWorkersReady - %v: received reply: %v\n", call.ServiceMethod, call)
+			log.Printf("blockworkersready - %v: readyworkercounter: %v\n", call.ServiceMethod, readyWorkerCounter)
 
 			if call.Error != nil {
-				log.Printf("checkWorkersReady: received error: %v\n", call.Error)
+				log.Printf("blockWorkersReady - %v: received error: %v\n", call.ServiceMethod, call.Error)
 			} else {
-				c.workerCounterMutex.Lock()
-				c.workerCounter++
-				c.workerCounterMutex.Unlock()
-				log.Printf("checkWorkersReady: %d workers ready!\n", c.workerCounter)
-			}
-
-			if c.workerCounter == numWorkers {
-				log.Printf("checkWorkersReady: sending all %d workers ready!\n", numWorkers)
-				c.allWorkersReady <- true
-				c.workerCounterMutex.Lock()
-				c.workerCounter = 0
-				c.workerCounterMutex.Unlock()
-				return
+				readyWorkerCounter++
+				log.Printf("blockWorkersReady - %v: %d workers ready!\n", call.ServiceMethod, readyWorkerCounter)
+				if readyWorkerCounter == numWorkers {
+					c.allWorkersReady <- true
+					readyWorkerCounter = 0
+					return
+				}
 			}
 		}
 	}
@@ -178,8 +176,8 @@ func (c *Coord) Compute() (int, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
 
-	fmt.Printf("Coord: in compute\n")
-	//numWorkers := len(c.queryWorkers)
+	numWorkers := len(c.queryWorkers)
+	go c.blockWorkersReady(numWorkers, c.workerDoneStart)
 
 	// TODO check if all workers are finished, currently returns placeholder result after 5 supersteps
 	for {
@@ -187,34 +185,33 @@ func (c *Coord) Compute() (int, error) {
 		case notify := <-c.restartSuperStepCh:
 			log.Printf("worker failed: %v\n", notify)
 			c.restartCheckpoint()
-		default:
-			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
-			time.Sleep(3 * time.Second)
-			// TODO: @Ryan need to check
-			//shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
-			//// call workers query handler
-			//progressSuperStep := ProgressSuperStep{
-			//	SuperStepNum: c.superStepNumber,
-			//	IsCheckpoint: shouldCheckPoint,
-			//}
-			//go c.checkWorkersReady(numWorkers)
-			//fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
-			//	c.superStepNumber, shouldCheckPoint)
-			//
-			//for _, wClient := range c.queryWorkers {
-			//	var result ProgressSuperStep
-			//	wClient.Go(
-			//		"Worker.ComputeVertices", progressSuperStep, &result,
-			//		c.workerDone,
-			//	)
-			//}
-			//
-			//select {
-			//case <-c.allWorkersReady:
-			//	fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
-			//}
-			//c.superStepNumber += 1
+			go c.blockWorkersReady(numWorkers, c.workerDoneRestart)
+		case <-c.allWorkersReady:
+			fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
 
+			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
+			time.Sleep(3 * time.Second) // TODO: remove
+
+			shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
+			// call workers query handler
+			progressSuperStep := ProgressSuperStep{
+				SuperStepNum: c.superStepNumber,
+				IsCheckpoint: shouldCheckPoint,
+			}
+			fmt.Println("Coord - calling checkWorkersReady from Compute!")
+			fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
+				c.superStepNumber, shouldCheckPoint)
+
+			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
+			for _, wClient := range c.queryWorkers {
+				var result ProgressSuperStep
+				wClient.Go(
+					"Worker.ComputeVertices", progressSuperStep, &result,
+					c.workerDoneCompute,
+				)
+			}
+			go c.blockWorkersReady(numWorkers, c.workerDoneCompute)
+			c.superStepNumber += 1
 		}
 	}
 	log.Printf("Compute: Query complete, result found\n")
@@ -224,34 +221,26 @@ func (c *Coord) Compute() (int, error) {
 func (c *Coord) restartCheckpoint() {
 	log.Printf("Coord - restart checkpoint\n")
 	checkpointNumber := c.lastCheckpointNumber
+	numWorkers := len(c.queryWorkers)
 
 	restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
 
-	numWorkers := len(c.queryWorkers)
+	fmt.Println("Coord - calling checkWorkersReady from restartCheckpoint!")
 
-	go c.checkWorkersReady(numWorkers)
+	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
 	for wId, wClient := range c.queryWorkers {
 		fmt.Printf("Coord - calling RevertToLastCheckpoint on worker %v\n", wId)
 		var result RestartSuperStep
 		wClient.Go(
 			"Worker.RevertToLastCheckpoint", restartSuperStep, &result,
-			c.workerDone,
+			c.workerDoneRestart,
 		)
 	}
-
-	select {
-	case <-c.allWorkersReady:
-		fmt.Printf("Coord: restart checkpoint: received all %d workers!\n", numWorkers)
-		// continue query from the last checkpoint
-		c.superStepNumber = c.lastCheckpointNumber + 1
-	}
-
+	c.superStepNumber = checkpointNumber + 1
 }
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	log.Printf("JoinWorker: Adding worker %d\n", w.WorkerId)
-
-	// TODO: needs to block while there is an ongoing query
 
 	client, err := util.DialRPC(w.WorkerListenAddr)
 	if err != nil {
@@ -280,7 +269,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
 		var result RestartSuperStep
 		client.Go(
-			"Worker.RevertToLastCheckpoint", restartSuperStep, &result, c.workerDone)
+			"Worker.RevertToLastCheckpoint", restartSuperStep, &result, c.workerDoneRestart)
 		log.Printf("JoinWorker: called RPC to revert to last checkpoint %v for readded worker\n", checkpointNumber)
 	} else {
 		c.workers[w.WorkerId] = client
