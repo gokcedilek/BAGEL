@@ -305,24 +305,24 @@ func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
 	log.Printf("RevertToLastCheckpoint: worker %v received %v\n", w.config.WorkerId, req)
-	//checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
-	//if err != nil {
-	//	log.Printf("RevertToLastCheckpoint: error retrieving checkpoint: %v\n", err)
-	//	return err
-	//}
-	//log.Printf("RevertToLastCheckpoint: retrieved checkpoint: %v\n", checkpoint)
-	//
-	//w.SuperStep.Id = checkpoint.SuperStepNumber
-	//for k, v := range w.Vertices {
-	//	if state, found := checkpoint.CheckpointState[v.Id]; found {
-	//		log.Printf("RevertToLastCheckpoint: found state: %v\n", state)
-	//		v.currentValue = state.CurrentValue
-	//		v.isActive = state.IsActive
-	//		v.messages = state.Messages
-	//		w.Vertices[k] = v
-	//	}
-	//}
-	//log.Printf("RevertToLastCheckpoint: vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
+	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
+	if err != nil {
+		log.Printf("RevertToLastCheckpoint: error retrieving checkpoint: %v\n", err)
+		return err
+	}
+	log.Printf("RevertToLastCheckpoint: retrieved checkpoint: %v\n", checkpoint)
+
+	w.SuperStep.Id = checkpoint.SuperStepNumber
+	for k, v := range w.Vertices {
+		if state, found := checkpoint.CheckpointState[v.Id]; found {
+			log.Printf("RevertToLastCheckpoint: found state: %v\n", state)
+			v.currentValue = state.CurrentValue
+			v.isActive = state.IsActive
+			v.messages = state.Messages
+			w.Vertices[k] = v
+		}
+	}
+	log.Printf("RevertToLastCheckpoint: vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
 
 	*reply = req
 	return nil
@@ -467,69 +467,69 @@ func (w *Worker) Start() error {
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
 	log.Printf("wComputeVertices - worker %v\n", w.config.WorkerId)
 
-	//w.updateVerticesWithNewStep(args.SuperStepNum)
-	//pendingMsgsExist := len(w.SuperStep.Messages) != 0
-	//allVerticesInactive := true
-	//
-	//for _, vertex := range w.Vertices {
-	//	messages := vertex.Compute(SHORTEST_PATH) // TODO: get the information about which computation to use
-	//	w.updateMessagesMap(messages)
-	//	if vertex.isActive {
-	//		allVerticesInactive = false
-	//	}
-	//}
-	//
-	//log.Printf("ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
-	//	pendingMsgsExist, allVerticesInactive)
-	//
-	///* TODO commented out until Vertex Compute() impl.
-	//if !pendingMsgsExist && allVerticesInactive {
-	//	log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
-	//}
-	//*/
-	//
-	//if args.IsCheckpoint {
-	//	checkpoint := w.checkpoint()
-	//	_, err := w.storeCheckpoint(checkpoint)
-	//	util.CheckErr(
-	//		err, fmt.Sprintf(
-	//			"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
-	//			w.SuperStep.Id,
-	//		),
-	//	)
-	//}
-	//
-	//for worker, msgs := range w.SuperStep.Outgoing {
-	//
-	//	// local vertices
-	//	if worker == w.config.WorkerId {
-	//		w.SuperStep.Outgoing[worker] = msgs
-	//		continue
-	//	}
-	//
-	//	batch := BatchedMessages{Batch: msgs}
-	//	var unused Message
-	//	// todo change to Go
-	//	err := w.workerCallBook[worker].Call("Worker.PutBatchedMessages", batch, &unused)
-	//	if err != nil {
-	//		log.Printf("ComputeVertices: worker %v could not send messages to worker: %v\n",
-	//			w.config.WorkerId, worker)
-	//	}
-	//}
-	//
-	//resp = &ProgressSuperStep{
-	//	SuperStepNum: w.SuperStep.Id,
-	//	IsCheckpoint: args.IsCheckpoint,
-	//	IsActive:     !pendingMsgsExist && allVerticesInactive,
-	//}
-	//
-	//err := w.handleSuperStepDone()
-	//
-	//if err != nil {
-	//	log.Printf("ComputeVertices: err: %v\n", err)
-	//	log.Printf("ComputeVertices: worker %v could not complete superstep # %v\n",
-	//		w.config.WorkerId, w.SuperStep.Id)
-	//}
+	w.updateVerticesWithNewStep(args.SuperStepNum)
+	pendingMsgsExist := len(w.SuperStep.Messages) != 0
+	allVerticesInactive := true
+
+	for _, vertex := range w.Vertices {
+		messages := vertex.Compute(SHORTEST_PATH) // TODO: get the information about which computation to use
+		w.updateMessagesMap(messages)
+		if vertex.isActive {
+			allVerticesInactive = false
+		}
+	}
+
+	log.Printf("ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
+		pendingMsgsExist, allVerticesInactive)
+
+	/* TODO commented out until Vertex Compute() impl.
+	if !pendingMsgsExist && allVerticesInactive {
+		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
+	}
+	*/
+
+	if args.IsCheckpoint {
+		checkpoint := w.checkpoint()
+		_, err := w.storeCheckpoint(checkpoint)
+		util.CheckErr(
+			err, fmt.Sprintf(
+				"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
+				w.SuperStep.Id,
+			),
+		)
+	}
+
+	for worker, msgs := range w.SuperStep.Outgoing {
+
+		// local vertices
+		if worker == w.config.WorkerId {
+			w.SuperStep.Outgoing[worker] = msgs
+			continue
+		}
+
+		batch := BatchedMessages{Batch: msgs}
+		var unused Message
+		// todo change to Go
+		err := w.workerCallBook[worker].Call("Worker.PutBatchedMessages", batch, &unused)
+		if err != nil {
+			log.Printf("ComputeVertices: worker %v could not send messages to worker: %v\n",
+				w.config.WorkerId, worker)
+		}
+	}
+
+	resp = &ProgressSuperStep{
+		SuperStepNum: w.SuperStep.Id,
+		IsCheckpoint: args.IsCheckpoint,
+		IsActive:     !pendingMsgsExist && allVerticesInactive,
+	}
+
+	err := w.handleSuperStepDone()
+
+	if err != nil {
+		log.Printf("ComputeVertices: err: %v\n", err)
+		log.Printf("ComputeVertices: worker %v could not complete superstep # %v\n",
+			w.config.WorkerId, w.SuperStep.Id)
+	}
 
 	return nil
 }
