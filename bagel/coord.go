@@ -183,7 +183,7 @@ func (c *Coord) Compute() (int, error) {
 	for {
 		select {
 		case notify := <-c.restartSuperStepCh:
-			fmt.Printf("Coord - compute: worker failed: %s\n", notify)
+			log.Printf("worker failed: %v\n", notify)
 			c.restartCheckpoint()
 			go c.blockWorkersReady(numWorkers, c.workerDoneRestart)
 		case <-c.allWorkersReady:
@@ -374,7 +374,7 @@ func (c *Coord) Start(
 	c.restartSuperStepCh = make(chan bool, 1)
 
 	err := rpc.Register(c)
-	util.CheckErr(err, fmt.Sprintf("Coord could not register RPCs"))
+	util.CheckErr(err, "Coord could not register RPCs")
 	log.Printf("Start: accepting RPCs from workers and clients\n")
 
 	wg := sync.WaitGroup{}

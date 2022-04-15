@@ -6,15 +6,17 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"net"
 	"net/rpc"
 	"os"
+	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
+
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Message represents an arbitrary message sent during calculation
@@ -87,7 +89,7 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 	if err != nil {
 		fchecker.Stop()
 		util.CheckErr(
-			err, fmt.Sprintf("fchecker for Worker %d failed", workerId),
+			err, "fchecker for Worker %d failed", workerId,
 		)
 	}
 
@@ -111,69 +113,28 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	/*
-			db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
-			defer db.Close()
+	vertices, err := database.GetVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
+	if err != nil {
+		panic("getVerticesModulo failed")
+	}
 
-		if err != nil {
-			log.Printf("StartQuery: error connecting to mysql: %v\n", err)
-			*reply = nil
-			return err
+	for _, v := range vertices {
+		n := []NeighbourVertex{}
+		for _, neighborID := range v.Neighbors {
+			n = append(n, NeighbourVertex{vertexId: neighborID})
 		}
-			if err != nil {
-				log.Printf("error connecting to mysql: %v\n", err)
-				*reply = nil
-				return err
-			}
-
-			result, err := db.Query(
-				"SELECT * from graph where srcVertex % ? = ?",
-				startSuperStep.NumWorkers, w.config.WorkerId,
-			)
-			if err != nil {
-				log.Printf("error: %v\n", err)
-				err = nil  // TODO remove once db is set up!!! just for testing recovery now
-				return nil // TODO remove once db is set up!!! just for testing recovery now
-			}
-
-			var pairs []VertexPair
-			for result.Next() {
-				var pair VertexPair
-
-				err = result.Scan(&pair.srcId, &pair.destId)
-				if err != nil {
-					log.Printf("scan error: %v\n", err)
-				}
-
-				// add vertex to worker state
-				if vertex, ok := w.Vertices[pair.srcId]; ok {
-					vertex.neighbors = append(
-						vertex.neighbors,
-						NeighbourVertex{
-							vertexId: pair.
-								destId,
-						},
-					)
-					w.Vertices[pair.srcId] = vertex
-				} else {
-					pianoVertex := Vertex{
-						Id:           pair.srcId,
-						neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
-						currentValue: 0,
-						messages:     nil,
-						isActive:     false,
-						workerAddr:   w.config.WorkerAddr,
-						SuperStep:    0,
-					}
-					w.Vertices[pair.srcId] = pianoVertex
-				}
-				pairs = append(pairs, pair)
-				log.Printf("pairs: %v\n", pairs)
-			}
-
-			log.Printf("vertices of worker: %v\n", w.Vertices)
-	*/
-
+		pianoVertex := Vertex{
+			Id:           v.VertexID,
+			neighbors:    n,
+			currentValue: 0,
+			messages:     nil,
+			isActive:     false,
+			workerAddr:   w.config.WorkerAddr,
+			SuperStep:    0,
+		}
+		w.Vertices[v.VertexID] = pianoVertex
+	}
+	fmt.Printf("vertices of worker: %v\n", w.Vertices)
 	return nil
 }
 
@@ -239,11 +200,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"worker %v could not dial coord addr %v\n", w.config.WorkerAddr,
-			w.config.CoordAddr,
-		),
+	util.CheckErr(err,
+		"worker %v could not dial coord addr %v\n", w.config.WorkerAddr, w.config.CoordAddr,
 	)
 
 	checkpointMsg := CheckpointMsg{
@@ -254,10 +212,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	var reply CheckpointMsg
 	log.Printf("storeCheckpoints: calling coord with checkpointMsg: %v\n", checkpointMsg)
 	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
-		),
+	util.CheckErr(err,
+		"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
 	)
 
 	return checkpoint, nil
@@ -330,27 +286,18 @@ func (w *Worker) RevertToLastCheckpoint(
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
 	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.WorkerListenAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Worker %v could not resolve WorkerListenAddr: %v",
-			w.config.WorkerId,
-			w.config.WorkerListenAddr,
-		),
+	util.CheckErr(err,
+		"Worker %v could not resolve WorkerListenAddr: %v", w.config.WorkerId, w.config.WorkerListenAddr,
 	)
 	listen, err := net.ListenTCP("tcp", listenAddr)
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Worker %v could not listen on listenAddr: %v", w.config.WorkerId,
-			listenAddr,
-		),
+	util.CheckErr(err,
+		"Worker %v could not listen on listenAddr: %v", w.config.WorkerId, listenAddr,
 	)
 
 	for {
 		conn, err := listen.Accept()
-		util.CheckErr(
-			err, fmt.Sprintf(
-				"Worker %v could not accept connections\n", w.config.WorkerId,
-			),
+		util.CheckErr(err,
+			"Worker %v could not accept connections\n", w.config.WorkerId,
 		)
 		go handler.ServeConn(conn)
 	}
@@ -382,11 +329,8 @@ func (w *Worker) Start() error {
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
 
-	util.CheckErr(
-		err, fmt.Sprintf(
-			"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,
-			w.config.CoordAddr,
-		),
+	util.CheckErr(err,
+		"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId, w.config.CoordAddr,
 	)
 
 	defer conn.Close()
@@ -405,7 +349,7 @@ func (w *Worker) Start() error {
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
 	util.CheckErr(
-		err, fmt.Sprintf("Start: Worker %v could not join\n", w.config.WorkerId),
+		err, "Start: Worker %v could not join\n", w.config.WorkerId,
 	)
 
 	log.Printf(
@@ -454,7 +398,7 @@ func (w *Worker) Start() error {
 	}
 
 	checkpoint1, err = w.storeCheckpoint(checkpoint1)
-	fmt.Printf("stored checkpoint1: %v\n", checkpoint1)
+	log.Printf("stored checkpoint1: %v\n", checkpoint1)
 
 	// end checkpoints test
 
@@ -491,11 +435,8 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
 		_, err := w.storeCheckpoint(checkpoint)
-		util.CheckErr(
-			err, fmt.Sprintf(
-				"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
-				w.SuperStep.Id,
-			),
+		util.CheckErr(err,
+			"Worker %v failed to checkpoint # %v\n", w.config.WorkerId, w.SuperStep.Id,
 		)
 	}
 
