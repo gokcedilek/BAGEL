@@ -91,7 +91,7 @@ func (v *Vertex) ComputePageRank() []Message {
 		totalFlow += flowValue.(float64)
 	}
 
-	// update neighbors if the change is large enough
+	// update neighbors at next step if the change is large enough
 	result := make([]Message, 0)
 	if math.Abs(totalFlow-v.currentValue.(float64)) > EPSILON {
 		for _, neighborVertex := range v.neighbors {
@@ -103,6 +103,7 @@ func (v *Vertex) ComputePageRank() []Message {
 			}
 			result = append(result, newMessage)
 		}
+		v.currentValue = totalFlow
 	}
 	return result
 }

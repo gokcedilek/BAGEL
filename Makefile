@@ -16,4 +16,4 @@ clean:
 	go clean -testcache
 
 test:
-	go test ./bagel
+	go test ./bagel -test.v
