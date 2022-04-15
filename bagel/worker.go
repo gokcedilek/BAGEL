@@ -6,15 +6,17 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"net"
 	"net/rpc"
 	"os"
+	database "project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
+
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Message represents an arbitrary message sent during calculation
@@ -111,69 +113,28 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	/*
-		db, err := sql.Open("mysql", "gokce:testpwd@tcp(127.0.0.1:3306)/graph")
-		defer db.Close()
-
+	vertices, err := database.GetVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
 	if err != nil {
-		log.Printf("StartQuery: error connecting to mysql: %v\n", err)
-		*reply = nil
-		return err
+		panic("getVerticesModulo failed")
 	}
-		if err != nil {
-			log.Printf("error connecting to mysql: %v\n", err)
-			*reply = nil
-			return err
+
+	for _, v := range vertices {
+		n := []NeighbourVertex{}
+		for _, neighborID := range v.Neighbors {
+			n = append(n, NeighbourVertex{vertexId: neighborID})
 		}
-
-		result, err := db.Query(
-			"SELECT * from graph where srcVertex % ? = ?",
-			startSuperStep.NumWorkers, w.config.WorkerId,
-		)
-		if err != nil {
-			log.Printf("error: %v\n", err)
-			err = nil  // TODO remove once db is set up!!! just for testing recovery now
-			return nil // TODO remove once db is set up!!! just for testing recovery now
+		pianoVertex := Vertex{
+			Id:           v.VertexID,
+			neighbors:    n,
+			currentValue: 0,
+			messages:     nil,
+			isActive:     false,
+			workerAddr:   w.config.WorkerAddr,
+			SuperStep:    0,
 		}
-
-		var pairs []VertexPair
-		for result.Next() {
-			var pair VertexPair
-
-			err = result.Scan(&pair.srcId, &pair.destId)
-			if err != nil {
-				log.Printf("scan error: %v\n", err)
-			}
-
-			// add vertex to worker state
-			if vertex, ok := w.Vertices[pair.srcId]; ok {
-				vertex.neighbors = append(
-					vertex.neighbors,
-					NeighbourVertex{
-						vertexId: pair.
-							destId,
-					},
-				)
-				w.Vertices[pair.srcId] = vertex
-			} else {
-				pianoVertex := Vertex{
-					Id:           pair.srcId,
-					neighbors:    []NeighbourVertex{{vertexId: pair.destId}},
-					currentValue: 0,
-					messages:     nil,
-					isActive:     false,
-					workerAddr:   w.config.WorkerAddr,
-					SuperStep:    0,
-				}
-				w.Vertices[pair.srcId] = pianoVertex
-			}
-			pairs = append(pairs, pair)
-			log.Printf("pairs: %v\n", pairs)
-		}
-
-		log.Printf("vertices of worker: %v\n", w.Vertices)
-	*/
-
+		w.Vertices[v.VertexID] = pianoVertex
+	}
+	fmt.Printf("vertices of worker: %v\n", w.Vertices)
 	return nil
 }
 
