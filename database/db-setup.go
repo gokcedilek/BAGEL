@@ -1,4 +1,4 @@
-package database
+package main
 
 import (
 	"bufio"
@@ -25,17 +25,15 @@ type Vertex struct {
 	neighbors    []uint64
 }
 
-var (
-	nodeAdjacencyList map[uint32][]uint32
-	db                *sql.DB
-	dbName            = "bagelDB_new"
-	tableName         = "adjList"
-	server            = "bagel.database.windows.net"
-	port              = 1433
-	user              = "user"
-	password          = "Distributedgraph!"
-	database          = "bagel_2.0"
-)
+var nodeAdjacencyList map[uint32][]uint32
+var db *sql.DB
+var dbName = "bagelDB_new"
+var tableName = "adjList"
+var server = "bagel.database.windows.net"
+var port = 1433
+var user = "user"
+var password = "Distributedgraph!"
+var database = "bagel_2.0"
 
 func main() {
 	//initializeDB(dbName)

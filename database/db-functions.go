@@ -1,4 +1,4 @@
-package database
+package main
 
 import (
 	"database/sql"
@@ -12,14 +12,23 @@ import (
 )
 
 type DBVertexResult struct {
-	VertexID     uint64
+	vertexID     uint64
 	vertexIDHash uint64
-	Neighbors    []uint64
+	neighbors    []uint64
 }
+
+var db *sql.DB
+var dbName = "bagelDB_new"
+var tableName = "adjList"
+var server = "bagel.database.windows.net"
+var port = 1433
+var user = "user"
+var password = "Distributedgraph!"
+var database = "bagel_2.0"
 
 func main() {
 	start := time.Now()
-	n, err := GetVerticesModulo(1, 3)
+	n, err := getVerticesModulo(1, 3)
 	if err != nil {
 		panic(err)
 	}
@@ -27,7 +36,7 @@ func main() {
 	fmt.Printf("Found vertex: %v in %s\n", n, elapsed)
 }
 
-func getDBConnection() (*sql.DB, error) {
+func connectToDb() (*sql.DB, error) {
 	// Build connection string
 	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;",
 		server, user, password, port, database)
@@ -41,8 +50,8 @@ func getDBConnection() (*sql.DB, error) {
 	return db, nil
 }
 
-func getVertexById(id int) (*DBVertexResult, error) {
-	getDBConnection()
+func getVertex(id int) (*DBVertexResult, error) {
+	connectToDb()
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
@@ -67,12 +76,12 @@ func getVertexById(id int) (*DBVertexResult, error) {
 	if err != nil {
 		panic("parsing hash to Uint64 failed")
 	}
-	v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, neighbors: convertStringToArray(neighbors, ".")}
+	v := DBVertexResult{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
 	return &v, nil
 }
 
-func GetVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, error) {
-	getDBConnection()
+func getVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, error) {
+	connectToDb()
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
@@ -96,14 +105,14 @@ func GetVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, err
 		if err != nil {
 			panic("parsing hash to Uint64 failed")
 		}
-		v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, Neighbors: convertStringToArray(neighbors, ".")}
+		v := DBVertexResult{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
 		vertices = append(vertices, v)
 	}
 
 	return vertices, nil
 }
 
-func convertStringToArray(a string, delim string) []uint64 {
+func stringToArray(a string, delim string) []uint64 {
 	neighbors := strings.Split(a, delim)
 	neighborSlice := []uint64{}
 	if len(strings.TrimSpace(a)) == 0 {

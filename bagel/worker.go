@@ -6,11 +6,9 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/rpc"
 	"os"
-	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
@@ -113,22 +111,27 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	vertices, err := database.GetVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
+
+	vertices, err := main.getVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
 	if err != nil {
 		panic("getVerticesModulo failed")
 	}
 
-	for _, v := range vertices {
+	for i, v := range vertices {
+		neighbors := []NeighbourVertex{}
+		for _, n := range v.neighbors {
+			neighbors = append(neighbors, NeighbourVertex{vertexId: n})
+		}
 		pianoVertex := Vertex{
-			Id:           v.VertexID,
-			neighbors:    v.Neighbors,
+			Id:           v.vertexID,
+			neighbors:    neighbors,
 			currentValue: 0,
 			messages:     nil,
 			isActive:     false,
 			workerAddr:   w.config.WorkerAddr,
 			SuperStep:    0,
 		}
-		w.Vertices[v.VertexID] = pianoVertex
+		w.Vertices[v.vertexID] = pianoVertex
 	}
 	fmt.Printf("vertices of worker: %v\n", w.Vertices)
 	return nil
