@@ -11,7 +11,7 @@ import (
 	_ "github.com/denisenkom/go-mssqldb"
 )
 
-type Vertex struct {
+type DBVertexResult struct {
 	vertexID     uint64
 	vertexIDHash uint64
 	neighbors    []uint64
@@ -27,9 +27,8 @@ var password = "Distributedgraph!"
 var database = "bagel_2.0"
 
 func main() {
-	connectToDb()
 	start := time.Now()
-	n, err := getVertex(490564)
+	n, err := getVerticesModulo(1, 3)
 	if err != nil {
 		panic(err)
 	}
@@ -51,7 +50,8 @@ func connectToDb() (*sql.DB, error) {
 	return db, nil
 }
 
-func getVertex(id int) (*Vertex, error) {
+func getVertex(id int) (*DBVertexResult, error) {
+	connectToDb()
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
@@ -68,16 +68,48 @@ func getVertex(id int) (*Vertex, error) {
 	qs := "SELECT * FROM " + tableName + " WHERE srcVertex = " + strconv.Itoa(id) + ";"
 	if err := db.QueryRow(qs).Scan(&searchID, &hash, &neighbors); err != nil {
 		if err == sql.ErrNoRows {
-			return &Vertex{}, fmt.Errorf("%d: unknown ID", id)
+			return &DBVertexResult{}, fmt.Errorf("%d: unknown ID", id)
 		}
-		return &Vertex{}, fmt.Errorf("some kind of error :| %d", id)
+		return &DBVertexResult{}, fmt.Errorf("some kind of error :| %d", id)
 	}
 	hashNum, err := strconv.ParseUint(hash, 10, 64)
 	if err != nil {
 		panic("parsing hash to Uint64 failed")
 	}
-	v := Vertex{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
+	v := DBVertexResult{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
 	return &v, nil
+}
+
+func getVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, error) {
+	connectToDb()
+	if db == nil {
+		fmt.Println("Not connected to Database yet")
+		panic("aaa")
+	}
+	result, err := db.Query(
+		"SELECT * from " + tableName + " where srcVertex % " + strconv.Itoa(int(numWorkers)) + " = " + strconv.Itoa(int(workerId)) + ";")
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		panic("query went wrong")
+	}
+	var searchID uint64
+	var hash string
+	var neighbors string
+	var vertices = []DBVertexResult{}
+	for result.Next() {
+		err := result.Scan(&searchID, &hash, &neighbors)
+		if err != nil {
+			panic("scan went wrong")
+		}
+		hashNum, err := strconv.ParseUint(hash, 10, 64)
+		if err != nil {
+			panic("parsing hash to Uint64 failed")
+		}
+		v := DBVertexResult{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
+		vertices = append(vertices, v)
+	}
+
+	return vertices, nil
 }
 
 func stringToArray(a string, delim string) []uint64 {
