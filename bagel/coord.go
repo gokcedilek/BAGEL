@@ -1,6 +1,7 @@
 package bagel
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -29,8 +30,9 @@ type Coord struct {
 	clientAPIListenAddr   string
 	workerAPIListenAddr   string
 	lostMsgsThresh        uint8
-	workers               map[uint32]*rpc.Client // worker id --> worker connection
-	queryWorkers          map[uint32]*rpc.Client // workers in use for current query - will be updated at start of query
+	workers               WorkerCallBook // worker id --> worker connection
+	queryWorkers          WorkerCallBook // workers in use for current query - will be updated at start of query
+	queryWorkersDirectory WorkerDirectory
 	workersMutex          sync.Mutex
 	lastCheckpointNumber  uint64
 	lastWorkerCheckpoints map[uint32]uint64
@@ -40,6 +42,7 @@ type Coord struct {
 	superStepNumber       uint64
 	workerDone            chan *rpc.Call
 	allWorkersReady       chan bool
+	restartSuperStepCh    chan bool
 }
 
 func NewCoord() *Coord {
@@ -50,6 +53,8 @@ func NewCoord() *Coord {
 		lastWorkerCheckpoints: make(map[uint32]uint64),
 		workers:               make(map[uint32]*rpc.Client),
 		checkpointFrequency:   1,
+		queryWorkers:          make(WorkerCallBook),
+		queryWorkersDirectory: make(WorkerDirectory),
 	}
 }
 
@@ -76,7 +81,10 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	c.lastWorkerCheckpoints = make(map[uint32]uint64)
 
 	// call workers query handler
-	startSuperStep := StartSuperStep{NumWorkers: uint8(len(c.queryWorkers))}
+	startSuperStep := StartSuperStep{
+		NumWorkers:      uint8(len(c.queryWorkers)),
+		WorkerDirectory: c.queryWorkersDirectory,
+	}
 	numWorkers := len(c.queryWorkers)
 	c.workerDone = make(chan *rpc.Call, numWorkers)
 	c.allWorkersReady = make(chan bool, 1)
@@ -106,7 +114,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	reply.Query = q
 	reply.Result = result
 
-	c.queryWorkers = nil
+	//c.queryWorkers = nil
 
 	// return nil for no errors
 	return nil
@@ -127,7 +135,7 @@ func (c *Coord) checkWorkersReady(
 				c.workerCounterMutex.Lock()
 				c.workerCounter++
 				c.workerCounterMutex.Unlock()
-				log.Printf("checkWorkersReady: %d workers ready!\n", numWorkers)
+				log.Printf("checkWorkersReady: %d workers ready!\n", c.workerCounter)
 			}
 
 			if c.workerCounter == numWorkers {
@@ -146,19 +154,17 @@ func (c *Coord) checkWorkersReady(
 func (c *Coord) UpdateCheckpoint(
 	msg CheckpointMsg, reply *CheckpointMsg,
 ) error {
-	log.Printf("UpdateCheckpoint: msg: %v\n", msg)
 	// save the last SuperStep # checkpointed by this worker
 	c.lastWorkerCheckpoints[msg.WorkerId] = msg.SuperStepNumber
 
 	// update global SuperStep # if needed
 	allWorkersUpdated := true
-	for _, v := range c.lastWorkerCheckpoints {
-		if v != msg.SuperStepNumber {
+	for wId, _ := range c.queryWorkers {
+		if c.lastWorkerCheckpoints[wId] != msg.SuperStepNumber {
 			allWorkersUpdated = false
 			break
 		}
 	}
-	log.Printf("UpdateCheckpoint: updated coord checkpoints map: %v\n", c.lastWorkerCheckpoints)
 
 	if allWorkersUpdated {
 		c.lastCheckpointNumber = msg.SuperStepNumber
@@ -172,69 +178,74 @@ func (c *Coord) Compute() (int, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
 
-	numWorkers := len(c.queryWorkers)
+	fmt.Printf("Coord: in compute\n")
+	//numWorkers := len(c.queryWorkers)
 
 	// TODO check if all workers are finished, currently returns placeholder result after 5 supersteps
-	for i := 0; i < 5; i++ {
-		// for {
-
-		shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
-
-		// call workers query handler
-		progressSuperStep := ProgressSuperStep{
-			SuperStepNum: c.superStepNumber,
-			IsCheckpoint: shouldCheckPoint,
-		}
-
-		//c.workerDone = make(chan *rpc.Call, numWorkers)
-		//c.allWorkersReady = make(chan bool, 1)
-		go c.checkWorkersReady(numWorkers)
-
-		log.Printf("Compute: progressing super step # %d, should checkpoint %v \n",
-			c.superStepNumber, shouldCheckPoint)
-
-		for _, wClient := range c.queryWorkers {
-			var result ProgressSuperStep
-			wClient.Go(
-				"Worker.ComputeVertices", progressSuperStep, &result,
-				c.workerDone,
-			)
-		}
-
-		// TODO: for testing workers joining during query, remove
-		time.Sleep(3 * time.Second)
-
+	for {
 		select {
-		case <-c.allWorkersReady:
-			log.Printf("Compute: received all %d workers - Superstep %d is complete!\n", c.superStepNumber, numWorkers)
+		case notify := <-c.restartSuperStepCh:
+			fmt.Printf("worker failed: %s\n", notify)
+			c.restartCheckpoint()
+		default:
+			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
+			time.Sleep(3 * time.Second)
+			// TODO: @Ryan need to check
+			//shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
+			//// call workers query handler
+			//progressSuperStep := ProgressSuperStep{
+			//	SuperStepNum: c.superStepNumber,
+			//	IsCheckpoint: shouldCheckPoint,
+			//}
+			//go c.checkWorkersReady(numWorkers)
+			//fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
+			//	c.superStepNumber, shouldCheckPoint)
+			//
+			//for _, wClient := range c.queryWorkers {
+			//	var result ProgressSuperStep
+			//	wClient.Go(
+			//		"Worker.ComputeVertices", progressSuperStep, &result,
+			//		c.workerDone,
+			//	)
+			//}
+			//
+			//select {
+			//case <-c.allWorkersReady:
+			//	fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
+			//}
+			//c.superStepNumber += 1
+
 		}
-
-		c.superStepNumber += 1
-
 	}
 	log.Printf("Compute: Query complete, result found\n")
 	return -1, nil
 }
 
 func (c *Coord) restartCheckpoint() {
+	log.Printf("Coord - restart checkpoint\n")
 	checkpointNumber := c.lastCheckpointNumber
-	log.Printf("RestartCheckpoint: restarting from checkpoint %v\n", checkpointNumber)
 
 	restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
 
 	numWorkers := len(c.queryWorkers)
-	//c.workerDone = make(chan *rpc.Call, numWorkers)
-	//allWorkersReady := make(chan bool, 1)
 
-	// TODO: we need a wrapper to retry sending if the failed worker is not restarted yet
 	go c.checkWorkersReady(numWorkers)
-	for _, wClient := range c.queryWorkers {
-		var result interface{}
+	for wId, wClient := range c.queryWorkers {
+		fmt.Printf("Coord - calling RevertToLastCheckpoint on worker %v\n", wId)
+		var result RestartSuperStep
 		wClient.Go(
 			"Worker.RevertToLastCheckpoint", restartSuperStep, &result,
 			c.workerDone,
 		)
 	}
+
+	select {
+	case <-c.allWorkersReady:
+		fmt.Printf("Coord: restart checkpoint: received all %d workers!\n", numWorkers)
+		// continue query from the last checkpoint
+		c.superStepNumber = c.lastCheckpointNumber + 1
+	}
+
 }
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
@@ -251,6 +262,8 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		return err
 	}
 
+	c.queryWorkersDirectory[w.WorkerId] = w.WorkerListenAddr
+
 	go c.monitor(w)
 
 	if _, ok := c.queryWorkers[w.WorkerId]; ok {
@@ -259,16 +272,16 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 			"JoinWorker: Worker %d rejoined after failure\n",
 			w.WorkerId)
 		c.queryWorkers[w.WorkerId] = client
+		c.workers[w.WorkerId] = client
 
 		checkpointNumber := c.lastCheckpointNumber
 		log.Printf("JoinWorker: restarting failed worker from checkpoint: %v\n", checkpointNumber)
 
 		restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
-		var result interface{}
+		var result RestartSuperStep
 		client.Go(
 			"Worker.RevertToLastCheckpoint", restartSuperStep, &result, c.workerDone)
 		log.Printf("JoinWorker: called RPC to revert to last checkpoint %v for readded worker\n", checkpointNumber)
-
 	} else {
 		c.workers[w.WorkerId] = client
 		log.Printf(
@@ -331,8 +344,8 @@ func (c *Coord) monitor(w WorkerNode) {
 	for {
 		select {
 		case notify := <-notifyCh:
-			log.Printf("monitor: Worker %v failed: %s\n", w.WorkerId, notify)
-			c.restartCheckpoint() // TODO: add logic to join handling to accept a new process for the worker that failed
+			log.Printf("monitor: worker %v failed: %s\n", w.WorkerId, notify)
+			c.restartSuperStepCh <- true
 		}
 	}
 }
@@ -369,14 +382,11 @@ func (c *Coord) Start(
 	c.clientAPIListenAddr = clientAPIListenAddr
 	c.workerAPIListenAddr = workerAPIListenAddr
 	c.lostMsgsThresh = lostMsgsThresh
+	c.restartSuperStepCh = make(chan bool, 1)
 
 	err := rpc.Register(c)
-	if err != nil {
-		log.Printf("Start: Coord could not register RPCs\n")
-		util.CheckErr(err, "Start: Coord could not register RPCs")
-	}
-
-	log.Printf("Start: Ready to accepting RPCs from workers and clients\n")
+	util.CheckErr(err, fmt.Sprintf("Coord could not register RPCs"))
+	log.Printf("Start: accepting RPCs from workers and clients\n")
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
