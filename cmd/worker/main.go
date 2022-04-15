@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"project/bagel"
@@ -11,6 +12,16 @@ import (
 )
 
 func main() {
+
+	// create a log file and log to both console and terminal
+	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logFile.Close()
+	mw := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(mw)
+
 	var config bagel.WorkerConfig
 
 	workerWG := new(sync.WaitGroup)
@@ -28,6 +39,8 @@ func main() {
 			invalidInput = true
 		} else {
 			workerId = id
+			// logs all start with WorkerId from config
+			log.SetPrefix("Worker " + os.Args[1] + ": ")
 		}
 	}
 
@@ -39,7 +52,7 @@ func main() {
 	util.ReadJSONConfig(
 		fmt.Sprintf("config/worker%v_config.json", workerId), &config,
 	)
-	fmt.Sprintf("worker id: %v\n", config.WorkerId)
+	log.Printf("Main: starting Worker %v\n", config.WorkerId)
 
 	worker := bagel.NewWorker(config)
 

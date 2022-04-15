@@ -2,7 +2,6 @@ package bagel
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/rpc"
@@ -53,7 +52,7 @@ func (c *GraphClient) SendQuery(query Query) error {
 		return errors.New("unknown query type")
 	}
 
-	log.Printf("Client: SendQuery: query is queued up to be sent.")
+	log.Printf("SendQuery: query is queued up to be sent.")
 	go c.doQuery(query)
 	return nil
 }
@@ -63,10 +62,10 @@ func (c *GraphClient) doQuery(query Query) {
 	// TODO: implement timeout? or retry behavior? or stop handling?
 	err := c.coordClient.Call("Coord.StartQuery", query, &result)
 	if err != nil {
-		log.Printf("Client: sendQuery: error calling Coord.DoQuery:  %v\n", err)
+		log.Printf("sendQuery: error calling Coord.DoQuery:  %v\n", err)
 	}
 
-	fmt.Printf("client received result: %v\n", result)
+	log.Printf("client received result: %v\n", result)
 	c.notifyCh <- result
 }
 
@@ -76,7 +75,7 @@ func (c *GraphClient) doQuery(query Query) {
 func (c *GraphClient) Start(
 	clientId string, coordAddr string, clientAddr string,
 ) (chan QueryResult, error) {
-	log.Printf("Client: Start\n")
+	log.Printf("Start\n")
 
 	// set up client state
 	c.clientId = clientId
