@@ -1,4 +1,4 @@
-package main
+package database
 
 import (
 	"database/sql"
@@ -12,23 +12,14 @@ import (
 )
 
 type DBVertexResult struct {
-	vertexID     uint64
+	VertexID     uint64
 	vertexIDHash uint64
-	neighbors    []uint64
+	Neighbors    []uint64
 }
-
-var db *sql.DB
-var dbName = "bagelDB_new"
-var tableName = "adjList"
-var server = "bagel.database.windows.net"
-var port = 1433
-var user = "user"
-var password = "Distributedgraph!"
-var database = "bagel_2.0"
 
 func main() {
 	start := time.Now()
-	n, err := getVerticesModulo(1, 3)
+	n, err := GetVerticesModulo(1, 3)
 	if err != nil {
 		panic(err)
 	}
@@ -76,11 +67,11 @@ func getVertex(id int) (*DBVertexResult, error) {
 	if err != nil {
 		panic("parsing hash to Uint64 failed")
 	}
-	v := DBVertexResult{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
+	v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
 	return &v, nil
 }
 
-func getVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, error) {
+func GetVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, error) {
 	connectToDb()
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
@@ -105,7 +96,7 @@ func getVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, err
 		if err != nil {
 			panic("parsing hash to Uint64 failed")
 		}
-		v := DBVertexResult{vertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
+		v := DBVertexResult{VertexID: searchID, vertexIDHash: hashNum, neighbors: stringToArray(neighbors, ".")}
 		vertices = append(vertices, v)
 	}
 

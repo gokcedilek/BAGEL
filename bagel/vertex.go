@@ -9,7 +9,7 @@ const (
 // Vertex stores intermediate calculation data about the vertex
 type Vertex struct {
 	Id             uint64
-	neighbors      []NeighbourVertex
+	neighbors      []uint64
 	previousValues map[uint64]interface{}
 	currentValue   interface{}
 	messages       []Message
@@ -22,10 +22,6 @@ type VertexCheckpoint struct {
 	CurrentValue interface{}
 	Messages     []Message
 	IsActive     bool
-}
-
-type NeighbourVertex struct {
-	vertexId uint64
 }
 
 type VertexPair struct {
@@ -65,11 +61,11 @@ func (v *Vertex) ComputeShortestPath() []Message {
 
 	if shortestNewPath < v.currentValue.(int) {
 		v.currentValue = shortestNewPath
-		for _, neighborVertex := range v.neighbors {
+		for _, neighborVertexId := range v.neighbors {
 			newMessage := Message{
 				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
-				DestVertexId:   neighborVertex.vertexId,
+				DestVertexId:   neighborVertexId,
 				Value:          shortestNewPath + 1,
 			}
 			result = append(result, newMessage)
@@ -94,11 +90,11 @@ func (v *Vertex) ComputePageRank() []Message {
 	// update neighbors if the change is large enough
 	result := make([]Message, 0)
 	if math.Abs(totalFlow-v.currentValue.(float64)) > EPSILON {
-		for _, neighborVertex := range v.neighbors {
+		for _, neighborVertexId := range v.neighbors {
 			newMessage := Message{
 				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
-				DestVertexId:   neighborVertex.vertexId,
+				DestVertexId:   neighborVertexId,
 				Value:          totalFlow / float64(len(v.neighbors)),
 			}
 			result = append(result, newMessage)
