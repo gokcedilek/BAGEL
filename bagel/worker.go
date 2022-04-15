@@ -45,6 +45,7 @@ type Worker struct {
 	workerDirectory WorkerDirectory
 	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
+	QueryType       string
 }
 
 type Checkpoint struct {
