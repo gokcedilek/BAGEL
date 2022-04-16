@@ -45,7 +45,7 @@ func NewPageRankVertex(id uint64, neighbors []uint64) *Vertex {
 	return prVertex
 }
 
-func NewShortestPathVertex(id uint64, neighbors []uint64, value uint64) *Vertex {
+func NewShortestPathVertex(id uint64, neighbors []uint64, value int) *Vertex {
 	spVertex := NewVertex(id, neighbors)
 	spVertex.currentValue = value
 	return spVertex
