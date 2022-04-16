@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"net"
 	"net/rpc"
-	"project/database"
+	database "project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
@@ -35,12 +37,13 @@ type WorkerConfig struct {
 type Worker struct {
 	// Worker state may go here
 	config          WorkerConfig
-	SuperStep       SuperStep
-	NextSuperStep   SuperStep
+	SuperStep       *SuperStep
+	NextSuperStep   *SuperStep
 	Vertices        map[uint64]Vertex
 	workerDirectory WorkerDirectory
 	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
+	QueryType       string
 }
 
 type Checkpoint struct {
@@ -62,14 +65,11 @@ type BatchedMessages struct {
 
 func NewWorker(config WorkerConfig) *Worker {
 	return &Worker{
-		config: config,
-		SuperStep: SuperStep{
-			Id:           0,
-			Messages:     nil,
-			Outgoing:     nil,
-			IsCheckpoint: false,
-		},
-		Vertices: make(map[uint64]Vertex),
+		config:         config,
+		SuperStep:      NewSuperStep(0),
+		NextSuperStep:  NewSuperStep(1),
+		Vertices:       make(map[uint64]Vertex),
+		workerCallBook: make(WorkerCallBook),
 	}
 }
 
@@ -92,12 +92,23 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 	return addr
 }
 
+func NewSuperStep(number uint64) *SuperStep {
+	return &SuperStep{
+		Id:           number,
+		QueryType:    "",
+		Messages:     make(map[uint64][]Message),
+		Outgoing:     make(map[uint32][]Message),
+		IsCheckpoint: false,
+	}
+}
+
 func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *interface{},
 ) error {
 
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
+	w.QueryType = startSuperStep.QueryType
 
 	log.Printf(
 		"StartQuery: worker %v received worker directory: %v\n",
@@ -109,20 +120,19 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
+	//w.Vertices = w.mockVertices(10)
+
 	vertices, err := database.GetVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
 	if err != nil {
 		panic("getVerticesModulo failed")
 	}
 
 	for _, v := range vertices {
-		pianoVertex := Vertex{
-			Id:           v.VertexID,
-			neighbors:    v.Neighbors,
-			currentValue: 0,
-			messages:     nil,
-			isActive:     false,
-			workerAddr:   w.config.WorkerAddr,
-			SuperStep:    0,
+		var pianoVertex Vertex
+		if w.QueryType == SHORTEST_PATH {
+			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt64)
+		} else {
+			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
@@ -247,28 +257,22 @@ func (w *Worker) Start() error {
 }
 
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
-	log.Printf("wComputeVertices - worker %v\n", w.config.WorkerId)
+	log.Printf("ComputeVertices - worker %v\n", w.config.WorkerId)
 
 	w.updateVerticesWithNewStep(args.SuperStepNum)
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0
 	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messages := vertex.Compute(SHORTEST_PATH) // TODO: get the information about which computation to use
-		w.updateMessagesMap(messages)
+		messages := vertex.Compute(w.QueryType)
+		w.updateOutgoingMessages(messages)
 		if vertex.isActive {
 			allVerticesInactive = false
 		}
 	}
 
-	log.Printf("ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Active: %v\n",
+	log.Printf("ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Inactive: %v\n",
 		pendingMsgsExist, allVerticesInactive)
-
-	/* TODO commented out until Vertex Compute() impl.
-	if !pendingMsgsExist && allVerticesInactive {
-		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
-	}
-	*/
 
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
@@ -279,8 +283,6 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	}
 
 	for worker, msgs := range w.SuperStep.Outgoing {
-
-		// local vertices
 		if worker == w.config.WorkerId {
 			w.SuperStep.Outgoing[worker] = msgs
 			continue
@@ -289,18 +291,36 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		batch := BatchedMessages{Batch: msgs}
 		var unused Message
 		// todo change to Go
+
+		if _, exists := w.workerCallBook[worker]; !exists {
+			var err error
+			w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
+
+			if err != nil {
+				log.Printf("Worker %v could not establish connection to destination worker %v at addr %v\n",
+					w.config.WorkerId, worker, w.workerDirectory[worker])
+			}
+		}
+
 		err := w.workerCallBook[worker].Call("Worker.PutBatchedMessages", batch, &unused)
 		if err != nil {
 			log.Printf("ComputeVertices: worker %v could not send messages to worker: %v\n",
 				w.config.WorkerId, worker)
 		}
+		log.Printf("Worker #%v sending %v messages\n", w.config.WorkerId, len(batch.Batch))
+	}
+
+	if !pendingMsgsExist && allVerticesInactive {
+		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
 	}
 
 	resp = &ProgressSuperStep{
 		SuperStepNum: w.SuperStep.Id,
 		IsCheckpoint: args.IsCheckpoint,
-		IsActive:     !pendingMsgsExist && allVerticesInactive,
+		IsActive:     pendingMsgsExist || !allVerticesInactive,
 	}
+
+	log.Printf("Worker is active %v\n", resp.IsActive)
 
 	err := w.handleSuperStepDone()
 
@@ -321,6 +341,7 @@ func (w *Worker) updateVerticesWithNewStep(superStepNum uint64) {
 }
 
 func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error {
+	log.Printf("Worker %v received %v messages", w.config.WorkerId, len(batch.Batch))
 	for _, msg := range batch.Batch {
 		w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
 	}
@@ -330,22 +351,67 @@ func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error 
 }
 
 func (w *Worker) handleSuperStepDone() error {
-
-	w.NextSuperStep.Id = w.SuperStep.Id + 1
-
 	log.Printf(
 		"handleSuperStepDone: Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
 		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
 	)
 
-	w.SuperStep = w.NextSuperStep
-	w.NextSuperStep = SuperStep{Id: w.SuperStep.Id + 1}
+	*w.SuperStep = *w.NextSuperStep
+	w.NextSuperStep = NewSuperStep(w.SuperStep.Id + 1)
 	return nil
 }
 
-func (w *Worker) updateMessagesMap(msgs []Message) {
+func (w *Worker) updateOutgoingMessages(msgs []Message) {
 	for _, msg := range msgs {
 		destWorker := util.HashId(msg.DestVertexId) % uint64(w.NumWorkers)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
+}
+
+func (w *Worker) mockVertices(numVertices int) map[uint64]Vertex {
+	mocks := make(map[uint64]Vertex)
+	termination := numVertices * int(w.NumWorkers)
+	for i := int(w.config.WorkerId); i < termination; i += int(w.config.WorkerId) {
+		vertexId := uint64(i)
+		neighbors := w.mockNeighbors(vertexId)
+		mockVertex := Vertex{
+			Id:             vertexId,
+			neighbors:      neighbors,
+			previousValues: nil,
+			currentValue:   0,
+			messages:       nil,
+			isActive:       true,
+			SuperStep:      0,
+		}
+		mocks[vertexId] = mockVertex
+	}
+	return mocks
+}
+
+func (w *Worker) mockNeighbors(vertexId uint64) []uint64 {
+	neighbors := make([]uint64, 5)
+
+	numNeighbors := rand.Int() % 10
+
+	for i := 0; i < numNeighbors; i++ {
+		neighborId := rand.Uint64()
+		if neighborId == vertexId {
+			i--
+			continue
+		}
+		neighbors = append(neighbors, neighborId)
+	}
+	return neighbors
+}
+
+func (w *Worker) mockMessages() []Message {
+	msgs := make([]Message, 10)
+
+	msg := Message{
+		SuperStepNum:   w.SuperStep.Id,
+		SourceVertexId: 1,
+		DestVertexId:   0,
+		Value:          1,
+	}
+	return append(msgs, msg)
 }

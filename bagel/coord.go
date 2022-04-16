@@ -39,13 +39,21 @@ type Coord struct {
 	readyWorkerCounter    int
 	failedWorkerCounter   int
 	workerCounterMutex    sync.Mutex
-	checkpointFrequency   int
+	checkpointFrequency   uint64
 	superStepNumber       uint64
 	workerDoneStart       chan *rpc.Call // done messages for Worker.StartQuery RPC
 	workerDoneCompute     chan *rpc.Call // done messages for Worker.ComputeVertices RPC
 	workerDoneRestart     chan *rpc.Call // done messages for Worker.RevertToLastCheckpoint RPC
-	allWorkersReady       chan bool
+	allWorkersReady       chan superstepDone
 	restartSuperStepCh    chan bool
+}
+
+// todo: use in allWorkersReady channel (rather than just bool)?
+type superstepDone struct {
+	allWorkersInactive bool
+	isSuccess          bool
+	ShortestPathResult int
+	PageRankResult     int // todo not sure what the result will be?
 }
 
 /*
@@ -60,7 +68,6 @@ func NewCoord() *Coord {
 		lostMsgsThresh:        0,
 		lastWorkerCheckpoints: make(map[uint32]uint64),
 		workers:               make(map[uint32]*rpc.Client),
-		checkpointFrequency:   1,
 		queryWorkers:          make(WorkerCallBook),
 		queryWorkersDirectory: make(WorkerDirectory),
 	}
@@ -92,12 +99,13 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	startSuperStep := StartSuperStep{
 		NumWorkers:      uint8(len(c.queryWorkers)),
 		WorkerDirectory: c.queryWorkersDirectory,
+		QueryType:       q.QueryType,
 	}
 	numWorkers := len(c.queryWorkers)
 	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
 	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
-	c.allWorkersReady = make(chan bool, 1)
+	c.allWorkersReady = make(chan superstepDone, 1)
 
 	log.Printf("StartQuery: computing query %v with %d workers ready!\n", q, numWorkers)
 
@@ -126,6 +134,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 func (c *Coord) blockWorkersReady(
 	numWorkers int, workerDone chan *rpc.Call) {
 	readyWorkerCounter := 0
+	inactiveWorkerCounter := 0
 
 	for {
 		select {
@@ -136,10 +145,24 @@ func (c *Coord) blockWorkersReady(
 			if call.Error != nil {
 				log.Printf("blockWorkersReady - %v: received error: %v\n", call.ServiceMethod, call.Error)
 			} else {
+
+				// todo check is for completion and not recovery complete
+				if ssComplete, ok := call.Reply.(ProgressSuperStep); ok {
+					if !ssComplete.IsActive {
+						inactiveWorkerCounter++
+						fmt.Printf("found a lazy one!!!\n")
+					}
+				}
+
 				readyWorkerCounter++
 				log.Printf("blockWorkersReady - %v: %d workers ready!\n", call.ServiceMethod, readyWorkerCounter)
 				if readyWorkerCounter == numWorkers {
-					c.allWorkersReady <- true
+					c.allWorkersReady <- superstepDone{
+						allWorkersInactive: numWorkers == inactiveWorkerCounter,
+						isSuccess:          true,
+						ShortestPathResult: 0,
+						PageRankResult:     0,
+					}
 					readyWorkerCounter = 0
 					return
 				}
@@ -179,20 +202,25 @@ func (c *Coord) Compute() (int, error) {
 	numWorkers := len(c.queryWorkers)
 	go c.blockWorkersReady(numWorkers, c.workerDoneStart)
 
-	// TODO check if all workers are finished, currently returns placeholder result after 5 supersteps
 	for {
 		select {
 		case notify := <-c.restartSuperStepCh:
 			log.Printf("worker failed: %v\n", notify)
 			c.restartCheckpoint()
 			go c.blockWorkersReady(numWorkers, c.workerDoneRestart)
-		case <-c.allWorkersReady:
+		case result := <-c.allWorkersReady:
+
 			fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
 
 			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
 			time.Sleep(3 * time.Second) // TODO: remove
 
-			shouldCheckPoint := c.superStepNumber%uint64(c.checkpointFrequency) == 0
+			if result.allWorkersInactive {
+				log.Printf("Computation is complete!")
+				return -1, nil
+			}
+
+			shouldCheckPoint := c.superStepNumber%c.checkpointFrequency == 0
 			// call workers query handler
 			progressSuperStep := ProgressSuperStep{
 				SuperStepNum: c.superStepNumber,
@@ -372,6 +400,7 @@ func (c *Coord) Start(
 	c.workerAPIListenAddr = workerAPIListenAddr
 	c.lostMsgsThresh = lostMsgsThresh
 	c.restartSuperStepCh = make(chan bool, 1)
+	c.checkpointFrequency = checkpointSteps
 
 	err := rpc.Register(c)
 	util.CheckErr(err, "Coord could not register RPCs")

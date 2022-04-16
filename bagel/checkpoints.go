@@ -88,6 +88,7 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
+	log.Println(err)
 	util.CheckErr(err,
 		"worker %v could not dial coord addr %v\n", w.config.WorkerAddr, w.config.CoordAddr,
 	)
