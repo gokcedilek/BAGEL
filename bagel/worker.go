@@ -529,6 +529,7 @@ func (w *Worker) mockVertices(numVertices int) []Vertex {
 		}
 		mocks = append(mocks, mockVertex)
 	}
+	return mocks
 }
 
 func (w *Worker) mockNeighbors(vertexId uint64) []uint64 {
