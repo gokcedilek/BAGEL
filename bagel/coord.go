@@ -207,11 +207,17 @@ func (c *Coord) Compute() (int, error) {
 			log.Printf("worker failed: %v\n", notify)
 			c.restartCheckpoint()
 			go c.blockWorkersReady(numWorkers, c.workerDoneRestart)
-		case <-c.allWorkersReady:
+		case result := <-c.allWorkersReady:
+
 			fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
 
 			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
 			time.Sleep(3 * time.Second) // TODO: remove
+
+			if result.allWorkersInactive {
+				log.Printf("Computation is complete!")
+				return -1, nil
+			}
 
 			shouldCheckPoint := c.superStepNumber%c.checkpointFrequency == 0
 			// call workers query handler
