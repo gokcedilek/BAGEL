@@ -1,15 +1,11 @@
 package bagel
 
 import (
-	"bytes"
-	"database/sql"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/rpc"
-	"os"
 	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
@@ -130,126 +126,8 @@ func (w *Worker) StartQuery(
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
-	fmt.Printf("vertices of worker: %v\n", w.Vertices)
+	fmt.Printf("vertices of worker: %v\n", len(w.Vertices))
 	return nil
-}
-
-func checkpointsSetup() (*sql.DB, error) {
-	//goland:noinspection SqlDialectInspection
-	const createCheckpoints string = `
-	  CREATE TABLE IF NOT EXISTS checkpoints (
-	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, 
--- 	  lastCheckpointNumber INTEGER NOT NULL, // TODO: use this for local setup (to be removed)
-	  checkpointState BLOB NOT NULL
-	  );`
-	db, err := sql.Open("sqlite3", "checkpoints.db")
-	if err != nil {
-		log.Printf("checkpointsSetup: Failed to open database: %v\n", err)
-		return nil, err
-	}
-
-	if _, err := db.Exec(createCheckpoints); err != nil {
-		log.Printf("checkpointsSetup: Failed execute command: %v\n", err)
-		return nil, err
-	}
-
-	return db, nil
-}
-
-func (w *Worker) checkpoint() Checkpoint {
-	checkPointState := make(map[uint64]VertexCheckpoint)
-
-	for k, v := range w.Vertices {
-		checkPointState[k] = VertexCheckpoint{
-			CurrentValue: v.currentValue,
-			Messages:     v.messages,
-			IsActive:     v.isActive,
-		}
-	}
-
-	return Checkpoint{
-		SuperStepNumber: w.SuperStep.Id,
-		CheckpointState: checkPointState,
-	}
-}
-
-func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
-	db, err := checkpointsSetup()
-	if err != nil {
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	var buf bytes.Buffer
-	if err = gob.NewEncoder(&buf).Encode(checkpoint.CheckpointState); err != nil {
-		log.Printf("storeCheckpoint: encode error: %v\n", err)
-	}
-
-	_, err = db.Exec(
-		"INSERT INTO checkpoints VALUES(?,?)",
-		checkpoint.SuperStepNumber,
-		buf.Bytes(),
-	)
-	if err != nil {
-		log.Printf("storeCheckpoint: error inserting into db: %v\n", err)
-	}
-
-	// notify coord about the latest checkpoint saved
-	coordClient, err := util.DialRPC(w.config.CoordAddr)
-	util.CheckErr(err,
-		"worker %v could not dial coord addr %v\n", w.config.WorkerAddr, w.config.CoordAddr,
-	)
-
-	checkpointMsg := CheckpointMsg{
-		SuperStepNumber: checkpoint.SuperStepNumber,
-		WorkerId:        w.config.WorkerId,
-	}
-
-	var reply CheckpointMsg
-	log.Printf("storeCheckpoints: calling coord with checkpointMsg: %v\n", checkpointMsg)
-	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
-	util.CheckErr(err,
-		"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
-	)
-
-	return checkpoint, nil
-}
-
-func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
-	Checkpoint, error,
-) {
-	db, err := checkpointsSetup()
-	if err != nil {
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	res := db.QueryRow(
-		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?", superStepNumber,
-	)
-	checkpoint := Checkpoint{}
-	var buf []byte
-	if err := res.Scan(
-		&checkpoint.SuperStepNumber, &buf,
-	); err == sql.ErrNoRows {
-		log.Printf("retrieveCheckpoint: scan error: %v\n", err)
-		return Checkpoint{}, err
-	}
-
-	var checkpointState map[uint64]VertexCheckpoint
-	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
-	if err != nil {
-		log.Printf("retrieveCheckpoint: decode error: %v, tmp: %v\n", err, checkpointState)
-		return Checkpoint{}, err
-	}
-	checkpoint.CheckpointState = checkpointState
-
-	log.Printf(
-		"retrieveCheckpoint: read ssn: %v, state: %v\n", checkpoint.SuperStepNumber,
-		checkpoint.CheckpointState,
-	)
-
-	return checkpoint, nil
 }
 
 // restore state of the last saved checkpoint
@@ -356,47 +234,11 @@ func (w *Worker) Start() error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	// TODO: this needs to be tested properly when workers are deployed on different machines
-	// begin checkpoints test
-	checkpoint0 := Checkpoint{
-		SuperStepNumber: 0, CheckpointState: make(map[uint64]VertexCheckpoint),
-	}
-
-	checkpoint0.CheckpointState[uint64(1)] = VertexCheckpoint{
-		CurrentValue: 1,
-		Messages:     nil,
-		IsActive:     true,
-	}
-
-	checkpoint0.CheckpointState[uint64(2)] = VertexCheckpoint{
-		CurrentValue: 2,
-		Messages:     nil,
-		IsActive:     true,
-	}
-
-	checkpoint0, err = w.storeCheckpoint(checkpoint0)
-	log.Printf("stored checkpoint0: %v\n", checkpoint0)
-
-	checkpoint1 := Checkpoint{
-		SuperStepNumber: 1, CheckpointState: make(map[uint64]VertexCheckpoint),
-	}
-
-	checkpoint1.CheckpointState[uint64(3)] = VertexCheckpoint{
-		CurrentValue: 3,
-		Messages:     nil,
-		IsActive:     true,
-	}
-
-	checkpoint1.CheckpointState[uint64(4)] = VertexCheckpoint{
-		CurrentValue: 4,
-		Messages:     nil,
-		IsActive:     true,
-	}
-
-	checkpoint1, err = w.storeCheckpoint(checkpoint1)
-	log.Printf("stored checkpoint1: %v\n", checkpoint1)
-
-	// end checkpoints test
+	// setup local checkpoints storage for the worker
+	err = w.initializeCheckpoints()
+	util.CheckErr(
+		err, "Start: Worker %v could not setup checkpoints db\n", w.config.WorkerId,
+	)
 
 	// go wait for work to do
 	wg.Wait()
