@@ -317,7 +317,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	resp = &ProgressSuperStep{
 		SuperStepNum: w.SuperStep.Id,
 		IsCheckpoint: args.IsCheckpoint,
-		IsActive:     !pendingMsgsExist && allVerticesInactive,
+		IsActive:     pendingMsgsExist || !allVerticesInactive,
 	}
 
 	err := w.handleSuperStepDone()
