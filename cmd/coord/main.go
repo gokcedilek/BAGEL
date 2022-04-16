@@ -25,5 +25,10 @@ func main() {
 	util.CheckErr(err, "Error reading coord config: %v\n", err)
 
 	coord := bagel.NewCoord()
-	coord.Start(config.ClientAPIListenAddr, config.WorkerAPIListenAddr, config.LostMsgsThresh, config.StepsBetweenCheckpoints)
+	err = coord.Start(config.ClientAPIListenAddr,
+		config.WorkerAPIListenAddr,
+		config.LostMsgsThresh,
+		config.StepsBetweenCheckpoints,
+	)
+	util.CheckErr(err, "Coord start had error")
 }

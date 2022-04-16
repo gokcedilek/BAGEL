@@ -23,6 +23,7 @@ type WorkerNode struct {
 type StartSuperStep struct {
 	NumWorkers      uint8
 	WorkerDirectory WorkerDirectory
+	QueryType       string
 }
 
 type ProgressSuperStep struct {
