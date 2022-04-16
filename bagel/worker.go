@@ -120,12 +120,6 @@ func (w *Worker) StartQuery(
 	}
 
 	for _, v := range vertices {
-		/*
-			n := []NeighbourVertex{}
-			for _, neighborID := range v.Neighbors {
-				n = append(n, NeighbourVertex{vertexId: neighborID})
-			}
-		*/
 		pianoVertex := Vertex{
 			Id:           v.VertexID,
 			neighbors:    v.Neighbors,

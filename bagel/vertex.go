@@ -60,11 +60,11 @@ func (v *Vertex) ComputeShortestPath() []Message {
 
 	if shortestNewPath < v.currentValue.(int) {
 		v.currentValue = shortestNewPath
-		for _, neighborId := range v.neighbors {
+		for _, neighborVertexId := range v.neighbors {
 			newMessage := Message{
 				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
-				DestVertexId:   neighborId,
+				DestVertexId:   neighborVertexId,
 				Value:          shortestNewPath + 1,
 			}
 			result = append(result, newMessage)
@@ -89,11 +89,11 @@ func (v *Vertex) ComputePageRank() []Message {
 	// update neighbors at next step if the change is large enough
 	result := make([]Message, 0)
 	if math.Abs(totalFlow-v.currentValue.(float64)) > EPSILON {
-		for _, neighborId := range v.neighbors {
+		for _, neighborVertexId := range v.neighbors {
 			newMessage := Message{
 				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
-				DestVertexId:   neighborId,
+				DestVertexId:   neighborVertexId,
 				Value:          totalFlow / float64(len(v.neighbors)),
 			}
 			result = append(result, newMessage)
