@@ -320,6 +320,8 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		IsActive:     pendingMsgsExist || !allVerticesInactive,
 	}
 
+	log.Printf("Worker is active %v\n", resp.IsActive)
+
 	err := w.handleSuperStepDone()
 
 	if err != nil {

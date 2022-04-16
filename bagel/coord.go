@@ -150,6 +150,7 @@ func (c *Coord) blockWorkersReady(
 				if ssComplete, ok := call.Reply.(ProgressSuperStep); ok {
 					if !ssComplete.IsActive {
 						inactiveWorkerCounter++
+						fmt.Printf("found a lazy one!!!\n")
 					}
 				}
 
