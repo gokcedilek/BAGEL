@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/rpc"
 	"os"
-	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
@@ -114,6 +114,9 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
+	w.mockVertices(10)
+	/* TODO mocking vertex since db is too large;
+
 	vertices, err := database.GetVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
 	if err != nil {
 		panic("getVerticesModulo failed")
@@ -130,6 +133,7 @@ func (w *Worker) StartQuery(
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
+	*/
 	fmt.Printf("vertices of worker: %v\n", w.Vertices)
 	return nil
 }
@@ -506,4 +510,39 @@ func (w *Worker) updateMessagesMap(msgs []Message) {
 		destWorker := util.HashId(msg.DestVertexId) % uint64(w.NumWorkers)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
+}
+
+func (w *Worker) mockVertices(numVertices int) []Vertex {
+	mocks := make([]Vertex, 0, 10)
+	termination := numVertices * int(w.NumWorkers)
+	for i := int(w.config.WorkerId); i < termination; i += int(w.config.WorkerId) {
+		vertexId := uint64(i)
+		neighbors := w.mockNeighbors(vertexId)
+		mockVertex := Vertex{
+			Id:             vertexId,
+			neighbors:      neighbors,
+			previousValues: nil,
+			currentValue:   nil,
+			messages:       nil,
+			isActive:       true,
+			SuperStep:      0,
+		}
+		mocks = append(mocks, mockVertex)
+	}
+}
+
+func (w *Worker) mockNeighbors(vertexId uint64) []uint64 {
+	neighbors := make([]uint64, 5)
+
+	numNeighbors := rand.Int() % 10
+
+	for i := 0; i < numNeighbors; i++ {
+		neighborId := rand.Uint64()
+		if neighborId == vertexId {
+			i--
+			continue
+		}
+		neighbors = append(neighbors, neighborId)
+	}
+	return neighbors
 }
