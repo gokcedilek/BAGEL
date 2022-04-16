@@ -28,8 +28,27 @@ type VertexPair struct {
 	destId uint64
 }
 
-func NewVertex() *Vertex {
-	return &Vertex{}
+func NewVertex(id uint64, neighbors []uint64) *Vertex {
+	return &Vertex{
+		Id:             id,
+		neighbors:      neighbors,
+		previousValues: make(map[uint64]interface{}),
+		messages:       make([]Message, 10),
+		isActive:       false,
+		SuperStep:      0,
+	}
+}
+
+func NewPageRankVertex(id uint64, neighbors []uint64) *Vertex {
+	prVertex := NewVertex(id, neighbors)
+	prVertex.currentValue = 1
+	return prVertex
+}
+
+func NewShortestPathVertex(id uint64, neighbors []uint64, value uint64) *Vertex {
+	spVertex := NewVertex(id, neighbors)
+	spVertex.currentValue = value
+	return spVertex
 }
 
 type ShortestPathVertex Vertex

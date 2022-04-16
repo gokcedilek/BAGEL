@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"net/rpc"
@@ -127,13 +128,11 @@ func (w *Worker) StartQuery(
 	}
 
 	for _, v := range vertices {
-		pianoVertex := Vertex{
-			Id:           v.VertexID,
-			neighbors:    v.Neighbors,
-			currentValue: 0,
-			messages:     nil,
-			isActive:     false,
-			SuperStep:    0,
+		var pianoVertex Vertex
+		if w.QueryType == SHORTEST_PATH {
+			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt64)
+		} else {
+			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
