@@ -44,7 +44,7 @@ type Coord struct {
 	workerDoneStart       chan *rpc.Call // done messages for Worker.StartQuery RPC
 	workerDoneCompute     chan *rpc.Call // done messages for Worker.ComputeVertices RPC
 	workerDoneRestart     chan *rpc.Call // done messages for Worker.RevertToLastCheckpoint RPC
-	allWorkersReady       chan bool
+	allWorkersReady       chan superstepDone
 	restartSuperStepCh    chan bool
 }
 
@@ -105,7 +105,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
 	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
-	c.allWorkersReady = make(chan bool, 1)
+	c.allWorkersReady = make(chan superstepDone, 1)
 
 	log.Printf("StartQuery: computing query %v with %d workers ready!\n", q, numWorkers)
 
@@ -134,6 +134,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 func (c *Coord) blockWorkersReady(
 	numWorkers int, workerDone chan *rpc.Call) {
 	readyWorkerCounter := 0
+	inactiveWorkerCounter := 0
 
 	for {
 		select {
@@ -144,10 +145,23 @@ func (c *Coord) blockWorkersReady(
 			if call.Error != nil {
 				log.Printf("blockWorkersReady - %v: received error: %v\n", call.ServiceMethod, call.Error)
 			} else {
+
+				// todo check is for completion and not recovery complete
+				if ssComplete, ok := call.Reply.(ProgressSuperStep); ok {
+					if !ssComplete.IsActive {
+						inactiveWorkerCounter++
+					}
+				}
+
 				readyWorkerCounter++
 				log.Printf("blockWorkersReady - %v: %d workers ready!\n", call.ServiceMethod, readyWorkerCounter)
 				if readyWorkerCounter == numWorkers {
-					c.allWorkersReady <- true
+					c.allWorkersReady <- superstepDone{
+						allWorkersInactive: numWorkers == inactiveWorkerCounter,
+						isSuccess:          true,
+						ShortestPathResult: 0,
+						PageRankResult:     0,
+					}
 					readyWorkerCounter = 0
 					return
 				}
