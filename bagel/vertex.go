@@ -33,7 +33,7 @@ func NewVertex(id uint64, neighbors []uint64) *Vertex {
 		Id:             id,
 		neighbors:      neighbors,
 		previousValues: make(map[uint64]interface{}),
-		messages:       make([]Message, 10),
+		messages:       make([]Message, 0),
 		isActive:       false,
 		SuperStep:      0,
 	}
