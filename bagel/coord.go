@@ -1,7 +1,6 @@
 package bagel
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -10,7 +9,6 @@ import (
 	"project/util"
 	"strings"
 	"sync"
-	"time"
 )
 
 type CoordConfig struct {
@@ -148,8 +146,8 @@ func (c *Coord) blockWorkersReady(
 
 				// todo check is for completion and not recovery complete
 				if ssComplete, ok := call.Reply.(*ProgressSuperStep); ok && !ssComplete.IsActive {
+					log.Printf("Worker reported as being active = %v, %v\n", ssComplete.IsActive, ssComplete)
 					inactiveWorkerCounter++
-					fmt.Printf("Worker reported as being active = %v\n", ssComplete.IsActive)
 				}
 
 				readyWorkerCounter++
@@ -159,7 +157,6 @@ func (c *Coord) blockWorkersReady(
 					call.ServiceMethod,
 					readyWorkerCounter,
 					inactiveWorkerCounter)
-				
 
 				if readyWorkerCounter == numWorkers {
 					c.allWorkersReady <- superstepDone{
@@ -169,6 +166,7 @@ func (c *Coord) blockWorkersReady(
 						PageRankResult:     0,
 					}
 					readyWorkerCounter = 0
+					inactiveWorkerCounter = 0
 					return
 				}
 			}
@@ -205,20 +203,19 @@ func (c *Coord) Compute() (int, error) {
 	// need to make it concurrent; so put in separate channel
 
 	numWorkers := len(c.queryWorkers)
-	go c.blockWorkersReady(numWorkers, c.workerDoneStart)
+	c.blockWorkersReady(numWorkers, c.workerDoneStart)
 
 	for {
 		select {
 		case notify := <-c.restartSuperStepCh:
 			log.Printf("worker failed: %v\n", notify)
 			c.restartCheckpoint()
-			go c.blockWorkersReady(numWorkers, c.workerDoneRestart)
+			c.blockWorkersReady(numWorkers, c.workerDoneRestart)
 		case result := <-c.allWorkersReady:
 
-			fmt.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
+			log.Printf("Coord: Compute: received all %d workers - compute is complete!\n", numWorkers)
 
-			fmt.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
-			time.Sleep(3 * time.Second) // TODO: remove
+			log.Printf("Coord-running compute with superstep: %v\n", c.superStepNumber)
 
 			if result.allWorkersInactive {
 				log.Printf("Computation is complete!")
@@ -231,8 +228,8 @@ func (c *Coord) Compute() (int, error) {
 				SuperStepNum: c.superStepNumber,
 				IsCheckpoint: shouldCheckPoint,
 			}
-			fmt.Println("Coord - calling checkWorkersReady from Compute!")
-			fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
+			log.Println("Coord - calling checkWorkersReady from Compute!")
+			log.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
 				c.superStepNumber, shouldCheckPoint)
 
 			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
@@ -243,7 +240,7 @@ func (c *Coord) Compute() (int, error) {
 					c.workerDoneCompute,
 				)
 			}
-			go c.blockWorkersReady(numWorkers, c.workerDoneCompute)
+			c.blockWorkersReady(numWorkers, c.workerDoneCompute)
 			c.superStepNumber += 1
 		}
 	}
@@ -258,11 +255,11 @@ func (c *Coord) restartCheckpoint() {
 
 	restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
 
-	fmt.Println("Coord - calling checkWorkersReady from restartCheckpoint!")
+	log.Println("Coord - calling checkWorkersReady from restartCheckpoint!")
 
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
 	for wId, wClient := range c.queryWorkers {
-		fmt.Printf("Coord - calling RevertToLastCheckpoint on worker %v\n", wId)
+		log.Printf("Coord - calling RevertToLastCheckpoint on worker %v\n", wId)
 		var result RestartSuperStep
 		wClient.Go(
 			"Worker.RevertToLastCheckpoint", restartSuperStep, &result,
@@ -303,7 +300,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 			SuperStepNumber: checkpointNumber,
 			WorkerDirectory: c.queryWorkersDirectory,
 		}
-	
+
 		var result RestartSuperStep
 		client.Go(
 			"Worker.RevertToLastCheckpoint", restartSuperStep, &result, c.workerDoneRestart)

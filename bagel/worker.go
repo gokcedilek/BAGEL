@@ -2,10 +2,8 @@ package bagel
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"net"
 	"net/rpc"
 	database "project/database"
@@ -138,7 +136,7 @@ func (w *Worker) StartQuery(
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
-	fmt.Printf("vertices of worker: %v\n", len(w.Vertices))
+	log.Printf("vertices of worker: %v\n", len(w.Vertices))
 	return nil
 }
 
@@ -261,17 +259,18 @@ func (w *Worker) Start() error {
 }
 
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
-	log.Printf("ComputeVertices - worker %v\n", w.config.WorkerId)
+	log.Printf("ComputeVertices - worker %v superstep %v \n", w.config.WorkerId, args.SuperStepNum)
 
 	w.updateVerticesWithNewStep(args.SuperStepNum)
-	pendingMsgsExist := len(w.SuperStep.Messages) != 0
 	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messages := vertex.Compute(w.Query.QueryType)
-		w.updateOutgoingMessages(messages)
-		if vertex.isActive {
-			allVerticesInactive = false
+		if len(vertex.messages) > 0 {
+			messages := vertex.Compute(w.Query.QueryType)
+			w.updateOutgoingMessages(messages)
+			if vertex.isActive {
+				allVerticesInactive = false
+			}
 		}
 	}
 
@@ -285,7 +284,9 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 
 	for worker, msgs := range w.SuperStep.Outgoing {
 		if worker == w.config.WorkerId {
-			w.SuperStep.Outgoing[worker] = msgs
+			for _, msg := range msgs {
+				w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
+			}
 			continue
 		}
 
@@ -311,16 +312,11 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		log.Printf("Worker #%v sending %v messages\n", w.config.WorkerId, len(batch.Batch))
 	}
 
-	shouldNotifyCoordActive, prevActive := w.IsWorkerActive(pendingMsgsExist, allVerticesInactive)
-	w.WasPreviousSSInactive = !prevActive
+	resp.SuperStepNum = w.SuperStep.Id
+	resp.IsCheckpoint = args.IsCheckpoint
+	resp.IsActive = !allVerticesInactive
 
-	resp = &ProgressSuperStep{
-		SuperStepNum: w.SuperStep.Id,
-		IsCheckpoint: args.IsCheckpoint,
-		IsActive:     shouldNotifyCoordActive,
-	}
-
-	fmt.Printf("Should notify Coord inactive for ssn %d = %v\n", w.SuperStep.Id, shouldNotifyCoordActive)
+	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", w.SuperStep.Id, resp.IsActive, resp)
 	err := w.handleSuperStepDone()
 
 	if err != nil {
@@ -367,55 +363,6 @@ func (w *Worker) updateOutgoingMessages(msgs []Message) {
 	}
 }
 
-// Mock Functions (without connecting to DB)
-func (w *Worker) mockVertices(numVertices int) map[uint64]Vertex {
-	mocks := make(map[uint64]Vertex)
-	termination := numVertices * int(w.NumWorkers)
-	for i := int(w.config.WorkerId); i < termination; i += int(w.config.WorkerId) {
-		vertexId := uint64(i)
-		neighbors := w.mockNeighbors(vertexId)
-		mockVertex := Vertex{
-			Id:             vertexId,
-			neighbors:      neighbors,
-			previousValues: nil,
-			currentValue:   0,
-			messages:       nil,
-			isActive:       true,
-			SuperStep:      0,
-		}
-		mocks[vertexId] = mockVertex
-	}
-	return mocks
-}
-
-func (w *Worker) mockNeighbors(vertexId uint64) []uint64 {
-	neighbors := make([]uint64, 5)
-
-	numNeighbors := rand.Int() % 10
-
-	for i := 0; i < numNeighbors; i++ {
-		neighborId := rand.Uint64()
-		if neighborId == vertexId {
-			i--
-			continue
-		}
-		neighbors = append(neighbors, neighborId)
-	}
-	return neighbors
-}
-
-func (w *Worker) mockMessages() []Message {
-	msgs := make([]Message, 10)
-
-	msg := Message{
-		SuperStepNum:   w.SuperStep.Id,
-		SourceVertexId: 1,
-		DestVertexId:   0,
-		Value:          1,
-	}
-	return append(msgs, msg)
-}
-
 func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 	for workerId, workerAddr := range newDirectory {
 		if w.workerDirectory[workerId] != workerAddr {
@@ -426,22 +373,4 @@ func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 			delete(w.workerCallBook, workerId)
 		}
 	}
-}
-
-func (w *Worker) IsWorkerActive(isPendingMsgExists bool, allVerticesInactive bool) (isWorkerActive bool, wasWorkerPreviouslyActive bool) {
-	if w.SuperStep.Id == 0 {
-		return true, true
-	}
-
-	isWorkerActive = true
-	if isPendingMsgExists || !allVerticesInactive {
-		wasWorkerPreviouslyActive = true
-	} else {
-		if w.WasPreviousSSInactive {
-			isWorkerActive = false
-		}
-		wasWorkerPreviouslyActive = false
-	}
-
-	return isWorkerActive, wasWorkerPreviouslyActive
 }
