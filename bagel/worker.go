@@ -275,9 +275,6 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		}
 	}
 
-	log.Printf("ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Inactive: %v\n",
-		pendingMsgsExist, allVerticesInactive)
-
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
 		_, err := w.storeCheckpoint(checkpoint)
@@ -323,8 +320,6 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		IsCheckpoint: args.IsCheckpoint,
 		IsActive:     pendingMsgsExist || !allVerticesInactive,
 	}
-
-	log.Printf("Worker is active %v\n", resp.IsActive)
 
 	err := w.handleSuperStepDone()
 

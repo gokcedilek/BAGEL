@@ -147,15 +147,16 @@ func (c *Coord) blockWorkersReady(
 			} else {
 
 				// todo check is for completion and not recovery complete
-				if ssComplete, ok := call.Reply.(ProgressSuperStep); ok {
-					if !ssComplete.IsActive {
-						inactiveWorkerCounter++
-						fmt.Printf("found a lazy one!!!\n")
-					}
+				if ssComplete, ok := call.Reply.(*ProgressSuperStep); ok && !ssComplete.IsActive {
+					inactiveWorkerCounter++
+					fmt.Printf("found a lazy one!!!\n")
 				}
 
 				readyWorkerCounter++
-				log.Printf("blockWorkersReady - %v: %d workers ready!\n", call.ServiceMethod, readyWorkerCounter)
+				log.Printf("blockWorkersReady - %v: %d workers ready! %d workers inactive!\n",
+					call.ServiceMethod,
+					readyWorkerCounter,
+					inactiveWorkerCounter)
 				if readyWorkerCounter == numWorkers {
 					c.allWorkersReady <- superstepDone{
 						allWorkersInactive: numWorkers == inactiveWorkerCounter,
