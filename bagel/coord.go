@@ -27,12 +27,8 @@ type Coord struct {
 	workers               WorkerCallBook // worker id --> worker connection
 	queryWorkers          WorkerCallBook // workers in use for current query - will be updated at start of query
 	queryWorkersDirectory WorkerDirectory
-	workersMutex          sync.Mutex
 	lastCheckpointNumber  uint64
 	lastWorkerCheckpoints map[uint32]uint64
-	readyWorkerCounter    int
-	failedWorkerCounter   int
-	workerCounterMutex    sync.Mutex
 	checkpointFrequency   uint64
 	superStepNumber       uint64
 	workerDoneStart       chan *rpc.Call // done messages for Worker.StartQuery RPC
@@ -48,11 +44,6 @@ type superstepDone struct {
 	isSuccess          bool
 	value              interface{}
 }
-
-/*
-workerDone chan *rpc.Call
-resetWorkerCounter chan bool --> used by fcheck
-*/
 
 func NewCoord() *Coord {
 	return &Coord{

@@ -275,15 +275,14 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	log.Printf("ComputeVertices - worker %v superstep %v \n", w.config.WorkerId, args.SuperStepNum)
 
 	w.updateVerticesWithNewStep(args.SuperStepNum)
-	pendingMsgsExist := len(w.SuperStep.Messages) != 0
-	allVerticesInactive := true
+	hasActiveVertex := false
 
 	for _, vertex := range w.Vertices {
 		if len(vertex.messages) > 0 {
 			messages := vertex.Compute(w.Query.QueryType)
 			w.updateOutgoingMessages(messages)
 			if vertex.isActive {
-				allVerticesInactive = false
+				hasActiveVertex = true
 			}
 		}
 
@@ -292,11 +291,6 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 			resp.CurrentValue = vertex.currentValue
 		}
 	}
-
-	log.Printf(
-		"ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Inactive: %v\n",
-		pendingMsgsExist, allVerticesInactive,
-	)
 
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
@@ -349,7 +343,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 
 	resp.SuperStepNum = w.SuperStep.Id
 	resp.IsCheckpoint = args.IsCheckpoint
-	resp.IsActive = !allVerticesInactive
+	resp.IsActive = hasActiveVertex
 
 	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", w.SuperStep.Id, resp.IsActive, resp)
 	err := w.handleSuperStepDone()
