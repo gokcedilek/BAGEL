@@ -311,22 +311,17 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		log.Printf("Worker #%v sending %v messages\n", w.config.WorkerId, len(batch.Batch))
 	}
 
-	shouldNotifyCoordInactive := !w.IsWorkerActive(pendingMsgsExist, allVerticesInactive) && w.WasPreviousSSInactive
-
-	fmt.Printf("Should notify Coord inactive for ssn %d = %v\n", w.SuperStep.Id, shouldNotifyCoordInactive)
-	if !w.IsWorkerActive(pendingMsgsExist, allVerticesInactive) {
-		w.WasPreviousSSInactive = true
-		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
-	} else {
-		w.WasPreviousSSInactive = false
-	}
+	
+	shouldNotifyCoordActive, prevActive := w.IsWorkerActive(pendingMsgsExist, allVerticesInactive)
+	w.WasPreviousSSInactive = !prevActive 
 
 	resp = &ProgressSuperStep{
 		SuperStepNum: w.SuperStep.Id,
 		IsCheckpoint: args.IsCheckpoint,
-		IsActive:     !shouldNotifyCoordInactive,
+		IsActive:     shouldNotifyCoordActive,
 	}
 
+	fmt.Printf("Should notify Coord inactive for ssn %d = %v\n", w.SuperStep.Id, shouldNotifyCoordActive)
 	err := w.handleSuperStepDone()
 
 	if err != nil {
@@ -434,6 +429,21 @@ func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 	}
 }
 
-func (w *Worker) IsWorkerActive(isPendingMsgExists bool, allVerticesInactive bool) bool {
-	return isPendingMsgExists || !allVerticesInactive
+func (w *Worker) IsWorkerActive(isPendingMsgExists bool, allVerticesInactive bool) (isWorkerActive bool, wasWorkerPreviouslyActive bool) {
+	if w.SuperStep.Id == 0 {
+		return true, true
+	}
+
+
+	isWorkerActive = true
+	if isPendingMsgExists || !allVerticesInactive {
+		wasWorkerPreviouslyActive = true
+	} else {
+		if w.WasPreviousSSInactive {
+			isWorkerActive = false
+		}
+		wasWorkerPreviouslyActive = false
+	}
+
+	return isWorkerActive, wasWorkerPreviouslyActive
 }

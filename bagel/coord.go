@@ -149,7 +149,7 @@ func (c *Coord) blockWorkersReady(
 				// todo check is for completion and not recovery complete
 				if ssComplete, ok := call.Reply.(*ProgressSuperStep); ok && !ssComplete.IsActive {
 					inactiveWorkerCounter++
-					fmt.Printf("found a lazy one!!!\n")
+					fmt.Printf("Worker reported as being active = %v\n", ssComplete.IsActive)
 				}
 
 				readyWorkerCounter++
