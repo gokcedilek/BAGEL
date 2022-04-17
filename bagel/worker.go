@@ -34,11 +34,6 @@ type WorkerConfig struct {
 	FCheckAckLocalAddress string
 }
 
-type WorkerQuery struct {
-	QueryType     string
-	QueryVertices []uint64
-}
-
 type Worker struct {
 	// Worker state may go here
 	config          WorkerConfig
