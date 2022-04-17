@@ -48,8 +48,7 @@ type Worker struct {
 	workerDirectory WorkerDirectory
 	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
-	//QueryType       string
-	Query WorkerQuery
+	QueryType       string
 }
 
 type Checkpoint struct {
@@ -114,11 +113,7 @@ func (w *Worker) StartQuery(
 
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
-	//w.QueryType = startSuperStep.QueryType
-	w.Query = WorkerQuery{
-		QueryType:     startSuperStep.QueryType,
-		QueryVertices: startSuperStep.QueryVertices,
-	}
+	w.QueryType = startSuperStep.QueryType
 
 	log.Printf(
 		"StartQuery: worker %v received worker directory: %v\n",
@@ -139,7 +134,7 @@ func (w *Worker) StartQuery(
 
 	for _, v := range vertices {
 		var pianoVertex Vertex
-		if w.Query.QueryType == SHORTEST_PATH {
+		if w.QueryType == SHORTEST_PATH {
 			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt64)
 		} else {
 			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
@@ -276,7 +271,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messages := vertex.Compute(w.Query.QueryType)
+		messages := vertex.Compute(w.QueryType)
 		w.updateOutgoingMessages(messages)
 		if vertex.isActive {
 			allVerticesInactive = false
@@ -330,7 +325,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
 	}
 
-	resp = &ProgressSuperStepResult{
+	*resp = ProgressSuperStepResult{
 		SuperStepNum: w.SuperStep.Id,
 		IsCheckpoint: args.IsCheckpoint,
 		IsActive:     pendingMsgsExist || !allVerticesInactive,

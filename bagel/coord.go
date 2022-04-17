@@ -168,9 +168,6 @@ func (c *Coord) blockWorkersReady(
 					queryResult = ssComplete.CurrentValue
 					fmt.Printf("query result: %v\n", queryResult)
 					fmt.Printf("ss complete: %v\n", ssComplete)
-				} else {
-					fmt.Printf("could not cast to result!\n")
-					fmt.Printf("ss complete: %v\n", ssComplete)
 				}
 
 				readyWorkerCounter++
