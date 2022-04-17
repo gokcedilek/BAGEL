@@ -4,8 +4,10 @@ import "net/rpc"
 
 // constants are used as msgType for the messages
 const (
-	PAGE_RANK     = "PageRank"
-	SHORTEST_PATH = "ShortestPath"
+	PAGE_RANK           = "PageRank"
+	SHORTEST_PATH       = "ShortestPath"
+	SHOREST_PATH_SOURCE = "ShortestPathSource"
+	SHOREST_PATH_DEST   = "ShortestPathDestination"
 )
 
 // TODO: may be needed for the queryWorkers queue
@@ -38,6 +40,7 @@ type SuperStepComplete struct {
 
 type RestartSuperStep struct {
 	SuperStepNumber uint64
+	WorkerDirectory WorkerDirectory
 }
 
 type CheckpointMsg struct {

@@ -53,7 +53,6 @@ type Checkpoint struct {
 
 type SuperStep struct {
 	Id           uint64
-	QueryType    string
 	Messages     map[uint64][]Message
 	Outgoing     map[uint32][]Message
 	IsCheckpoint bool
@@ -95,7 +94,6 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 func NewSuperStep(number uint64) *SuperStep {
 	return &SuperStep{
 		Id:           number,
-		QueryType:    "",
 		Messages:     make(map[uint64][]Message),
 		Outgoing:     make(map[uint32][]Message),
 		IsCheckpoint: false,
@@ -120,8 +118,6 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	//w.Vertices = w.mockVertices(10)
-
 	vertices, err := database.GetVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
 	if err != nil {
 		panic("getVerticesModulo failed")
@@ -131,7 +127,7 @@ func (w *Worker) StartQuery(
 		var pianoVertex Vertex
 		if w.Query.QueryType == SHORTEST_PATH {
 			vertexValue := math.MaxInt64
-			if IsTargetVertex(v.VertexID, w.Query.Nodes, w.Query.QueryType) {
+			if IsTargetVertex(v.VertexID, w.Query.Nodes, SHOREST_PATH_SOURCE) {
 				vertexValue = 0
 			}
 			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, vertexValue)
@@ -144,12 +140,14 @@ func (w *Worker) StartQuery(
 	return nil
 }
 
-// restore state of the last saved checkpoint
 func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
 	log.Printf("RevertToLastCheckpoint: worker %v received %v\n", w.config.WorkerId, req)
+
+	w.UpdateWorkerCallBook(req.WorkerDirectory)
 	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
+
 	if err != nil {
 		log.Printf("RevertToLastCheckpoint: error retrieving checkpoint: %v\n", err)
 		return err
@@ -367,6 +365,7 @@ func (w *Worker) updateOutgoingMessages(msgs []Message) {
 	}
 }
 
+// Mock Functions (without connecting to DB)
 func (w *Worker) mockVertices(numVertices int) map[uint64]Vertex {
 	mocks := make(map[uint64]Vertex)
 	termination := numVertices * int(w.NumWorkers)
@@ -413,4 +412,15 @@ func (w *Worker) mockMessages() []Message {
 		Value:          1,
 	}
 	return append(msgs, msg)
+}
+
+func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
+	for workerId, workerAddr := range newDirectory {
+		if w.workerDirectory[workerId] != workerAddr {
+			log.Printf("Found outdated address for worker %v; updating to new address %v",
+				workerId, workerAddr)
+			w.workerCallBook[workerId].Close()
+			delete(w.workerCallBook, workerId)
+		}
+	}
 }

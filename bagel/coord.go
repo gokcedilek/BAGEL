@@ -295,7 +295,11 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		checkpointNumber := c.lastCheckpointNumber
 		log.Printf("JoinWorker: restarting failed worker from checkpoint: %v\n", checkpointNumber)
 
-		restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
+		restartSuperStep := RestartSuperStep{
+			SuperStepNumber: checkpointNumber,
+			WorkerDirectory: c.queryWorkersDirectory,
+		}
+	
 		var result RestartSuperStep
 		client.Go(
 			"Worker.RevertToLastCheckpoint", restartSuperStep, &result, c.workerDoneRestart)
