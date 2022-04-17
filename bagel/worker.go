@@ -313,6 +313,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 
 	shouldNotifyCoordInactive := !w.IsWorkerActive(pendingMsgsExist, allVerticesInactive) && w.WasPreviousSSInactive
 
+	fmt.Printf("Should notify Coord inactive for ssn %d = %v\n", w.SuperStep.Id, shouldNotifyCoordInactive)
 	if !w.IsWorkerActive(pendingMsgsExist, allVerticesInactive) {
 		w.WasPreviousSSInactive = true
 		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
@@ -323,7 +324,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	resp = &ProgressSuperStep{
 		SuperStepNum: w.SuperStep.Id,
 		IsCheckpoint: args.IsCheckpoint,
-		IsActive:     shouldNotifyCoordInactive,
+		IsActive:     !shouldNotifyCoordInactive,
 	}
 
 	err := w.handleSuperStepDone()
