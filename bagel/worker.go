@@ -138,7 +138,7 @@ func (w *Worker) StartQuery(
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
-	fmt.Printf("vertices of worker: %v\n", len(w.Vertices))
+	fmt.Printf("total # vertices belonging to worker: %v\n", len(w.Vertices))
 	return nil
 }
 
@@ -311,9 +311,10 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		log.Printf("Worker #%v sending %v messages\n", w.config.WorkerId, len(batch.Batch))
 	}
 
-	
 	shouldNotifyCoordActive, prevActive := w.IsWorkerActive(pendingMsgsExist, allVerticesInactive)
-	w.WasPreviousSSInactive = !prevActive 
+	w.WasPreviousSSInactive = !prevActive
+
+	fmt.Printf("Should notify Coord inactive for ssn %d = %v\n", w.SuperStep.Id, shouldNotifyCoordActive)
 
 	resp = &ProgressSuperStep{
 		SuperStepNum: w.SuperStep.Id,
@@ -434,11 +435,10 @@ func (w *Worker) IsWorkerActive(isPendingMsgExists bool, allVerticesInactive boo
 		return true, true
 	}
 
-
 	isWorkerActive = true
-	if isPendingMsgExists || !allVerticesInactive {
-		wasWorkerPreviouslyActive = true
-	} else {
+	wasWorkerPreviouslyActive = true
+
+	if !isPendingMsgExists || allVerticesInactive {
 		if w.WasPreviousSSInactive {
 			isWorkerActive = false
 		}
