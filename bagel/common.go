@@ -1,6 +1,9 @@
 package bagel
 
-import "net/rpc"
+import (
+	"net/rpc"
+	"math"
+)
 
 // constants are used as msgType for the messages
 const (
@@ -8,10 +11,7 @@ const (
 	SHORTEST_PATH = "ShortestPath"
 )
 
-// TODO: may be needed for the queryWorkers queue
-//type WorkerInfo struct {
-//	WorkerId uint32
-//}
+const UNUSED_VALUE = math.MaxFloat64
 
 type WorkerNode struct {
 	WorkerId         uint32
@@ -24,12 +24,20 @@ type StartSuperStep struct {
 	NumWorkers      uint8
 	WorkerDirectory WorkerDirectory
 	QueryType       string
+	QueryVertex     uint64 // the target vertex if doing shortest paths and the only vertex if doing pagerank
 }
 
 type ProgressSuperStep struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
 	IsActive     bool
+}
+
+type ProgressSuperStepResult struct {
+	SuperStepNum uint64
+	IsCheckpoint bool
+	IsActive     bool
+	CurrentValue interface{}
 }
 
 type SuperStepComplete struct {
