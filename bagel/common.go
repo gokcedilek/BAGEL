@@ -24,12 +24,21 @@ type StartSuperStep struct {
 	NumWorkers      uint8
 	WorkerDirectory WorkerDirectory
 	QueryType       string
+	QueryVertices   []uint64
 }
 
 type ProgressSuperStep struct {
+	SuperStepNum  uint64
+	IsCheckpoint  bool
+	IsActive      bool
+	QueryVertices []uint64
+}
+
+type ProgressSuperStepResult struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
 	IsActive     bool
+	CurrentValue int
 }
 
 type SuperStepComplete struct {

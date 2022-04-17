@@ -32,6 +32,7 @@ type QueryResult struct {
 	Query  Query
 	Result interface{} // client dynamically casts Result based on Query.QueryType:
 	// float64 for pagerank, int for shortest path
+	Error string
 }
 
 func NewClient() *GraphClient {
@@ -66,6 +67,11 @@ func (c *GraphClient) doQuery(query Query) {
 	}
 
 	log.Printf("client received result: %v\n", result)
+
+	if result.Error != "" {
+		log.Printf("client received error: %v\n", result.Error)
+	}
+
 	c.notifyCh <- result
 }
 

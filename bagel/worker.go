@@ -34,6 +34,11 @@ type WorkerConfig struct {
 	FCheckAckLocalAddress string
 }
 
+type WorkerQuery struct {
+	QueryType     string
+	QueryVertices []uint64
+}
+
 type Worker struct {
 	// Worker state may go here
 	config          WorkerConfig
@@ -43,7 +48,8 @@ type Worker struct {
 	workerDirectory WorkerDirectory
 	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
-	QueryType       string
+	//QueryType       string
+	Query WorkerQuery
 }
 
 type Checkpoint struct {
@@ -108,7 +114,11 @@ func (w *Worker) StartQuery(
 
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
-	w.QueryType = startSuperStep.QueryType
+	//w.QueryType = startSuperStep.QueryType
+	w.Query = WorkerQuery{
+		QueryType:     startSuperStep.QueryType,
+		QueryVertices: startSuperStep.QueryVertices,
+	}
 
 	log.Printf(
 		"StartQuery: worker %v received worker directory: %v\n",
@@ -129,7 +139,7 @@ func (w *Worker) StartQuery(
 
 	for _, v := range vertices {
 		var pianoVertex Vertex
-		if w.QueryType == SHORTEST_PATH {
+		if w.Query.QueryType == SHORTEST_PATH {
 			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt64)
 		} else {
 			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
@@ -256,18 +266,24 @@ func (w *Worker) Start() error {
 	return nil
 }
 
-func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
+func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStepResult) error {
 	log.Printf("ComputeVertices - worker %v\n", w.config.WorkerId)
+
+	currentValue := 0
 
 	w.updateVerticesWithNewStep(args.SuperStepNum)
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0
 	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messages := vertex.Compute(w.QueryType)
+		messages := vertex.Compute(w.Query.QueryType)
 		w.updateOutgoingMessages(messages)
 		if vertex.isActive {
 			allVerticesInactive = false
+		}
+		// if the current vertex is the source vertex, capture its value
+		if vertex.Id == args.QueryVertices[0] {
+			currentValue = vertex.currentValue.(int)
 		}
 	}
 
@@ -314,10 +330,11 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
 	}
 
-	resp = &ProgressSuperStep{
+	resp = &ProgressSuperStepResult{
 		SuperStepNum: w.SuperStep.Id,
 		IsCheckpoint: args.IsCheckpoint,
 		IsActive:     pendingMsgsExist || !allVerticesInactive,
+		CurrentValue: currentValue,
 	}
 
 	log.Printf("Worker is active %v\n", resp.IsActive)

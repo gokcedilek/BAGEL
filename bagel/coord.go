@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"net/rpc"
+	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"strings"
@@ -52,8 +53,9 @@ type Coord struct {
 type superstepDone struct {
 	allWorkersInactive bool
 	isSuccess          bool
-	ShortestPathResult int
-	PageRankResult     int // todo not sure what the result will be?
+	//ShortestPathResult int
+	//PageRankResult     int // todo not sure what the result will be?
+	Result int
 }
 
 /*
@@ -86,6 +88,16 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 		// block while no workers available
 	}
 
+	// validate vertices sent by the client query
+	for _, vId := range q.Nodes {
+		_, err := database.GetVertexById(int(vId))
+		if err != nil {
+			log.Printf("vertex %v does not exist in the graph!\n", vId)
+			reply.Error = err.Error()
+			return nil
+		}
+	}
+
 	// go doesn't have a deep copy method :(
 	c.queryWorkers = make(map[uint32]*rpc.Client)
 	for k, v := range c.workers {
@@ -100,6 +112,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 		NumWorkers:      uint8(len(c.queryWorkers)),
 		WorkerDirectory: c.queryWorkersDirectory,
 		QueryType:       q.QueryType,
+		QueryVertices:   q.Nodes,
 	}
 	numWorkers := len(c.queryWorkers)
 	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
@@ -117,7 +130,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 		)
 	}
 
-	result, err := c.Compute()
+	result, err := c.Compute(q)
 	if err != nil {
 		log.Printf("StartQuery: Compute returned err: %v", err)
 	}
@@ -139,19 +152,25 @@ func (c *Coord) blockWorkersReady(
 	for {
 		select {
 		case call := <-workerDone:
-			log.Printf("blockWorkersReady - %v: received reply: %v\n", call.ServiceMethod, call)
+			log.Printf("blockWorkersReady - %v: received reply: %v\n", call.ServiceMethod, call.Reply)
 			log.Printf("blockworkersready - %v: readyworkercounter: %v\n", call.ServiceMethod, readyWorkerCounter)
 
 			if call.Error != nil {
 				log.Printf("blockWorkersReady - %v: received error: %v\n", call.ServiceMethod, call.Error)
 			} else {
-
+				var queryResult int
 				// todo check is for completion and not recovery complete
-				if ssComplete, ok := call.Reply.(ProgressSuperStep); ok {
+				if ssComplete, ok := call.Reply.(ProgressSuperStepResult); ok {
 					if !ssComplete.IsActive {
 						inactiveWorkerCounter++
 						fmt.Printf("found a lazy one!!!\n")
 					}
+					queryResult = ssComplete.CurrentValue
+					fmt.Printf("query result: %v\n", queryResult)
+					fmt.Printf("ss complete: %v\n", ssComplete)
+				} else {
+					fmt.Printf("could not cast to result!\n")
+					fmt.Printf("ss complete: %v\n", ssComplete)
 				}
 
 				readyWorkerCounter++
@@ -160,8 +179,9 @@ func (c *Coord) blockWorkersReady(
 					c.allWorkersReady <- superstepDone{
 						allWorkersInactive: numWorkers == inactiveWorkerCounter,
 						isSuccess:          true,
-						ShortestPathResult: 0,
-						PageRankResult:     0,
+						//ShortestPathResult: 0,
+						//PageRankResult:     0,
+						Result: queryResult,
 					}
 					readyWorkerCounter = 0
 					return
@@ -195,7 +215,7 @@ func (c *Coord) UpdateCheckpoint(
 	return nil
 }
 
-func (c *Coord) Compute() (int, error) {
+func (c *Coord) Compute(clientQuery Query) (int, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
 
@@ -217,14 +237,15 @@ func (c *Coord) Compute() (int, error) {
 
 			if result.allWorkersInactive {
 				log.Printf("Computation is complete!")
-				return -1, nil
+				return result.Result, nil
 			}
 
 			shouldCheckPoint := c.superStepNumber%c.checkpointFrequency == 0
 			// call workers query handler
 			progressSuperStep := ProgressSuperStep{
-				SuperStepNum: c.superStepNumber,
-				IsCheckpoint: shouldCheckPoint,
+				SuperStepNum:  c.superStepNumber,
+				IsCheckpoint:  shouldCheckPoint,
+				QueryVertices: clientQuery.Nodes,
 			}
 			fmt.Println("Coord - calling checkWorkersReady from Compute!")
 			fmt.Printf("Coord: Compute: progressing super step # %d, should checkpoint %v \n",
@@ -232,7 +253,7 @@ func (c *Coord) Compute() (int, error) {
 
 			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 			for _, wClient := range c.queryWorkers {
-				var result ProgressSuperStep
+				var result ProgressSuperStepResult
 				wClient.Go(
 					"Worker.ComputeVertices", progressSuperStep, &result,
 					c.workerDoneCompute,
