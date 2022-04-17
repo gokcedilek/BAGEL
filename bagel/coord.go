@@ -153,13 +153,17 @@ func (c *Coord) blockWorkersReady(
 				}
 
 				readyWorkerCounter++
+				isComputeComplete := inactiveWorkerCounter == numWorkers
+
 				log.Printf("blockWorkersReady - %v: %d workers ready! %d workers inactive!\n",
 					call.ServiceMethod,
 					readyWorkerCounter,
 					inactiveWorkerCounter)
+				
+
 				if readyWorkerCounter == numWorkers {
 					c.allWorkersReady <- superstepDone{
-						allWorkersInactive: numWorkers == inactiveWorkerCounter,
+						allWorkersInactive: isComputeComplete,
 						isSuccess:          true,
 						ShortestPathResult: 0,
 						PageRankResult:     0,
