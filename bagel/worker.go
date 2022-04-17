@@ -34,17 +34,15 @@ type WorkerConfig struct {
 
 type Worker struct {
 	// Worker state may go here
-	config                WorkerConfig
-	SuperStep             *SuperStep
-	NextSuperStep         *SuperStep
-	Query                 Query
-	Vertices              map[uint64]Vertex
-	workerDirectory       WorkerDirectory
-	workerCallBook        WorkerCallBook
-	NumWorkers            uint32
-	WasPreviousSSInactive bool
-	QueryType             string
-	QueryVertex           uint64
+	config          WorkerConfig
+	SuperStep       *SuperStep
+	NextSuperStep   *SuperStep
+	Query           Query
+	Vertices        map[uint64]Vertex
+	workerDirectory WorkerDirectory
+	workerCallBook  WorkerCallBook
+	NumWorkers      uint32
+	QueryVertex     uint64
 }
 
 type SuperStep struct {
@@ -60,12 +58,11 @@ type BatchedMessages struct {
 
 func NewWorker(config WorkerConfig) *Worker {
 	return &Worker{
-		config:                config,
-		SuperStep:             NewSuperStep(0),
-		NextSuperStep:         NewSuperStep(1),
-		Vertices:              make(map[uint64]Vertex),
-		workerCallBook:        make(WorkerCallBook),
-		WasPreviousSSInactive: false,
+		config:         config,
+		SuperStep:      NewSuperStep(0),
+		NextSuperStep:  NewSuperStep(1),
+		Vertices:       make(map[uint64]Vertex),
+		workerCallBook: make(WorkerCallBook),
 	}
 }
 
@@ -291,7 +288,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		}
 
 		// if the current vertex is the source vertex, capture its value
-		if IsTargetVertex(vertex.Id, w.Query.Nodes, w.QueryType) {
+		if IsTargetVertex(vertex.Id, w.Query.Nodes, w.Query.QueryType) {
 			resp.CurrentValue = vertex.currentValue
 		}
 	}

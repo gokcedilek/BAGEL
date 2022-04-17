@@ -10,7 +10,6 @@ const (
 	PAGE_RANK            = "PageRank"
 	SHORTEST_PATH        = "ShortestPath"
 	SHORTEST_PATH_SOURCE = "ShortestPathSource"
-	SHORTEST_PATH_DEST   = "ShortestPathDestination"
 	PR_UNUSED_VALUE      = math.MaxFloat64
 	SP_UNUSED_VALUE      = math.MaxInt64
 )
