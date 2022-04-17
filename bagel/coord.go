@@ -91,11 +91,6 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 		_, err := database.GetVertexById(int(vId))
 		if err != nil {
 			reply.Error = err.Error()
-			//reply.Error = errors.New(
-			//	fmt.Sprintf(
-			//		"vertex %v does not exist in the graph!\n", vId,
-			//	),
-			//)
 			return nil
 		}
 	}
@@ -147,7 +142,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	}
 
 	// start query computation
-	result, err := c.Compute(q)
+	result, err := c.Compute()
 	if err != nil {
 		log.Printf("StartQuery: Compute returned err: %v", err)
 	}
@@ -243,7 +238,7 @@ func (c *Coord) UpdateCheckpoint(
 	return nil
 }
 
-func (c *Coord) Compute(clientQuery Query) (interface{}, error) {
+func (c *Coord) Compute() (interface{}, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
 
@@ -473,8 +468,6 @@ func (c *Coord) Start(
 	err := rpc.Register(c)
 	util.CheckErr(err, "Coord could not register RPCs")
 	log.Printf("Start: accepting RPCs from workers and clients\n")
-
-	// gob.Register(errorString)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
