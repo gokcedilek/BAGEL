@@ -23,7 +23,7 @@ type WorkerNode struct {
 type StartSuperStep struct {
 	NumWorkers      uint8
 	WorkerDirectory WorkerDirectory
-	QueryType       string
+	Query           Query
 }
 
 type ProgressSuperStep struct {
@@ -43,6 +43,19 @@ type RestartSuperStep struct {
 type CheckpointMsg struct {
 	SuperStepNumber uint64
 	WorkerId        uint32
+}
+
+type Query struct {
+	ClientId  string
+	QueryType string   // PageRank or ShortestPath
+	Nodes     []uint64 // if PageRank, will have 1 vertex, if shortestpath, will have [start, end]
+	Graph     string   // graph to use - will always be google for now
+}
+
+type QueryResult struct {
+	Query  Query
+	Result interface{} // client dynamically casts Result based on Query.QueryType:
+	// float64 for pagerank, int for shortest path
 }
 
 // WorkerDirectory maps worker ids to address (string)

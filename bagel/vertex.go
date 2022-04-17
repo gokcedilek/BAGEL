@@ -1,6 +1,9 @@
 package bagel
 
-import "math"
+import (
+	"log"
+	"math"
+)
 
 const (
 	EPSILON = 1e-3
@@ -41,7 +44,7 @@ func NewVertex(id uint64, neighbors []uint64) *Vertex {
 
 func NewPageRankVertex(id uint64, neighbors []uint64) *Vertex {
 	prVertex := NewVertex(id, neighbors)
-	prVertex.currentValue = 1
+	prVertex.currentValue = float64(1)
 	return prVertex
 }
 
@@ -120,4 +123,32 @@ func (v *Vertex) ComputePageRank() []Message {
 		v.currentValue = totalFlow
 	}
 	return result
+}
+
+func IsTargetVertex(vertexId uint64, vertices []uint64, vertexType string) bool {
+	switch vertexType {
+	case SHORTEST_PATH:
+		return isTargetSPVertex(vertexId, vertices)
+	case PAGE_RANK:
+		return isTargetPRVertex(vertexId, vertices)
+	default:
+		log.Println("WARNING - isTargetVertex: query for unknown vertex type")
+		return false
+	}
+}
+
+func isTargetSPVertex(vertexId uint64, vertices []uint64) bool {
+	if len(vertices) < 2 {
+		return false
+	}
+
+	return vertexId == vertices[0] || vertexId == vertices[1]
+}
+
+func isTargetPRVertex(vertexId uint64, vertices []uint64) bool {
+	if len(vertices) < 1 {
+		return false
+	}
+
+	return vertexId == vertices[0]
 }

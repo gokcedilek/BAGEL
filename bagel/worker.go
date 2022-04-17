@@ -39,11 +39,11 @@ type Worker struct {
 	config          WorkerConfig
 	SuperStep       *SuperStep
 	NextSuperStep   *SuperStep
+	Query           Query
 	Vertices        map[uint64]Vertex
 	workerDirectory WorkerDirectory
 	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
-	QueryType       string
 }
 
 type Checkpoint struct {
@@ -108,7 +108,7 @@ func (w *Worker) StartQuery(
 
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
-	w.QueryType = startSuperStep.QueryType
+	w.Query = startSuperStep.Query
 
 	log.Printf(
 		"StartQuery: worker %v received worker directory: %v\n",
@@ -129,8 +129,12 @@ func (w *Worker) StartQuery(
 
 	for _, v := range vertices {
 		var pianoVertex Vertex
-		if w.QueryType == SHORTEST_PATH {
-			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt64)
+		if w.Query.QueryType == SHORTEST_PATH {
+			vertexValue := math.MaxInt64
+			if IsTargetVertex(v.VertexID, w.Query.Nodes, w.Query.QueryType) {
+				vertexValue = 0
+			}
+			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, vertexValue)
 		} else {
 			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
 		}
@@ -264,7 +268,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
-		messages := vertex.Compute(w.QueryType)
+		messages := vertex.Compute(w.Query.QueryType)
 		w.updateOutgoingMessages(messages)
 		if vertex.isActive {
 			allVerticesInactive = false

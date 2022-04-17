@@ -99,7 +99,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	startSuperStep := StartSuperStep{
 		NumWorkers:      uint8(len(c.queryWorkers)),
 		WorkerDirectory: c.queryWorkersDirectory,
-		QueryType:       q.QueryType,
+		Query:           q,
 	}
 	numWorkers := len(c.queryWorkers)
 	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
