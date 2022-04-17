@@ -27,11 +27,6 @@ type VertexCheckpoint struct {
 	IsActive     bool
 }
 
-type VertexPair struct {
-	srcId  uint64
-	destId uint64
-}
-
 func NewVertex(id uint64, neighbors []uint64) *Vertex {
 	return &Vertex{
 		Id:             id,

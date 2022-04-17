@@ -31,7 +31,6 @@ type StartSuperStep struct {
 type ProgressSuperStep struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
-	IsActive     bool
 }
 
 type ProgressSuperStepResult struct {
@@ -39,10 +38,6 @@ type ProgressSuperStepResult struct {
 	IsCheckpoint bool
 	IsActive     bool
 	CurrentValue interface{}
-}
-
-type SuperStepComplete struct {
-	IsActive bool
 }
 
 type RestartSuperStep struct {

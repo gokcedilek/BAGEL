@@ -47,11 +47,6 @@ type Worker struct {
 	QueryVertex           uint64
 }
 
-type Checkpoint struct {
-	SuperStepNumber uint64
-	CheckpointState map[uint64]VertexCheckpoint
-}
-
 type SuperStep struct {
 	Id           uint64
 	Messages     map[uint64][]Message
@@ -279,13 +274,8 @@ func (w *Worker) Start() error {
 	return nil
 }
 
-func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
+func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStepResult) error {
 	log.Printf("ComputeVertices - worker %v superstep %v \n", w.config.WorkerId, args.SuperStepNum)
-
-	currentValue := SP_UNUSED_VALUE
-	if w.Query.QueryType == PAGE_RANK {
-		currentValue = PR_UNUSED_VALUE
-	}
 
 	w.updateVerticesWithNewStep(args.SuperStepNum)
 	pendingMsgsExist := len(w.SuperStep.Messages) != 0
@@ -299,20 +289,10 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 				allVerticesInactive = false
 			}
 		}
+
 		// if the current vertex is the source vertex, capture its value
-		vertexType := SHORTEST_PATH_DEST
-		if w.Query.QueryType == PAGE_RANK {
-			vertexType = PAGE_RANK
-		}
-
-		if IsTargetVertex(vertex.Id, w.Query.Nodes, vertexType) {
-
-			if w.Query.QueryType == SHORTEST_PATH {
-				currentValue = vertex.currentValue.(int)
-			} else if w.Query.QueryType == PAGE_RANK {
-				// todo
-			}
-
+		if IsTargetVertex(vertex.Id, w.Query.Nodes, w.QueryType) {
+			resp.CurrentValue = vertex.currentValue
 		}
 	}
 
@@ -373,7 +353,6 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	resp.SuperStepNum = w.SuperStep.Id
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = !allVerticesInactive
-	resp.CurrentValue = currentValue
 
 	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", w.SuperStep.Id, resp.IsActive, resp)
 	err := w.handleSuperStepDone()

@@ -19,11 +19,6 @@ type CoordConfig struct {
 	StepsBetweenCheckpoints uint64
 }
 
-type SuperStepDone struct {
-	messagesSent        uint64
-	allVerticesInactive bool
-}
-
 type Coord struct {
 	// Coord state may go here
 	clientAPIListenAddr   string
@@ -184,10 +179,8 @@ func (c *Coord) blockWorkersReady(
 						log.Printf("Worker reported as being active = %v\n", ssComplete.IsActive)
 					}
 					// set the value from the worker that has the target vertex
-					if ssComplete.CurrentValue != UNUSED_VALUE {
-						queryResult = ssComplete.CurrentValue
-					}
-					log.Printf("query value: %v\n", queryResult)
+					queryResult = ssComplete.CurrentValue
+					log.Printf("current query value: %v\n", queryResult)
 					log.Printf("ss complete: %v\n", ssComplete)
 				}
 
@@ -198,7 +191,6 @@ func (c *Coord) blockWorkersReady(
 					call.ServiceMethod,
 					readyWorkerCounter,
 					inactiveWorkerCounter)
-				
 
 				if readyWorkerCounter == numWorkers {
 					c.allWorkersReady <- superstepDone{
