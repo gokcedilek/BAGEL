@@ -53,9 +53,7 @@ type Coord struct {
 type superstepDone struct {
 	allWorkersInactive bool
 	isSuccess          bool
-	//ShortestPathResult int
-	//PageRankResult     int // todo not sure what the result will be?
-	Result int
+	value              int
 }
 
 /*
@@ -160,13 +158,13 @@ func (c *Coord) blockWorkersReady(
 			} else {
 				var queryResult int
 				// todo check is for completion and not recovery complete
-				if ssComplete, ok := call.Reply.(ProgressSuperStepResult); ok {
+				if ssComplete, ok := call.Reply.(*ProgressSuperStepResult); ok {
 					if !ssComplete.IsActive {
 						inactiveWorkerCounter++
 						fmt.Printf("found a lazy one!!!\n")
 					}
 					queryResult = ssComplete.CurrentValue
-					fmt.Printf("query result: %v\n", queryResult)
+					fmt.Printf("query value: %v\n", queryResult)
 					fmt.Printf("ss complete: %v\n", ssComplete)
 				}
 
@@ -176,9 +174,7 @@ func (c *Coord) blockWorkersReady(
 					c.allWorkersReady <- superstepDone{
 						allWorkersInactive: numWorkers == inactiveWorkerCounter,
 						isSuccess:          true,
-						//ShortestPathResult: 0,
-						//PageRankResult:     0,
-						Result: queryResult,
+						value:              queryResult,
 					}
 					readyWorkerCounter = 0
 					return
@@ -234,7 +230,7 @@ func (c *Coord) Compute(clientQuery Query) (int, error) {
 
 			if result.allWorkersInactive {
 				log.Printf("Computation is complete!")
-				return result.Result, nil
+				return result.value, nil
 			}
 
 			shouldCheckPoint := c.superStepNumber%c.checkpointFrequency == 0
@@ -260,7 +256,7 @@ func (c *Coord) Compute(clientQuery Query) (int, error) {
 			c.superStepNumber += 1
 		}
 	}
-	log.Printf("Compute: Query complete, result found\n")
+	log.Printf("Compute: Query complete, value found\n")
 	return -1, nil
 }
 
