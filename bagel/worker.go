@@ -419,6 +419,7 @@ func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 		if w.workerDirectory[workerId] != workerAddr {
 			log.Printf("Found outdated address for worker %v; updating to new address %v",
 				workerId, workerAddr)
+			w.workerDirectory[workerId] = workerAddr
 			w.workerCallBook[workerId].Close()
 			delete(w.workerCallBook, workerId)
 		}
