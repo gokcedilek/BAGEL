@@ -43,6 +43,8 @@ type Worker struct {
 	workerCallBook        WorkerCallBook
 	NumWorkers            uint32
 	WasPreviousSSInactive bool
+	QueryType             string
+	QueryVertex           uint64
 }
 
 type Checkpoint struct {
@@ -118,7 +120,9 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	vertices, err := database.GetVerticesModulo(w.config.WorkerId, startSuperStep.NumWorkers)
+	vertices, err := database.GetVerticesModulo(
+		w.config.WorkerId, startSuperStep.NumWorkers,
+	)
 	if err != nil {
 		panic("getVerticesModulo failed")
 	}
@@ -136,20 +140,24 @@ func (w *Worker) StartQuery(
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
-	log.Printf("vertices of worker: %v\n", len(w.Vertices))
+	log.Printf("total # vertices belonging to worker: %v\n", len(w.Vertices))
 	return nil
 }
 
 func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
-	log.Printf("RevertToLastCheckpoint: worker %v received %v\n", w.config.WorkerId, req)
-
 	w.UpdateWorkerCallBook(req.WorkerDirectory)
+	log.Printf(
+		"RevertToLastCheckpoint: worker %v received %v\n", w.config.WorkerId,
+		req,
+	)
 	checkpoint, err := w.retrieveCheckpoint(req.SuperStepNumber)
 
 	if err != nil {
-		log.Printf("RevertToLastCheckpoint: error retrieving checkpoint: %v\n", err)
+		log.Printf(
+			"RevertToLastCheckpoint: error retrieving checkpoint: %v\n", err,
+		)
 		return err
 	}
 	log.Printf("RevertToLastCheckpoint: retrieved checkpoint: %v\n", checkpoint)
@@ -164,7 +172,10 @@ func (w *Worker) RevertToLastCheckpoint(
 			w.Vertices[k] = v
 		}
 	}
-	log.Printf("RevertToLastCheckpoint: vertices of worker %v: %v\n", w.config.WorkerId, w.Vertices)
+	log.Printf(
+		"RevertToLastCheckpoint: vertices of worker %v: %v\n",
+		w.config.WorkerId, w.Vertices,
+	)
 
 	*reply = req
 	return nil
@@ -172,17 +183,22 @@ func (w *Worker) RevertToLastCheckpoint(
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
 	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.WorkerListenAddr)
-	util.CheckErr(err,
-		"Worker %v could not resolve WorkerListenAddr: %v", w.config.WorkerId, w.config.WorkerListenAddr,
+	util.CheckErr(
+		err,
+		"Worker %v could not resolve WorkerListenAddr: %v", w.config.WorkerId,
+		w.config.WorkerListenAddr,
 	)
 	listen, err := net.ListenTCP("tcp", listenAddr)
-	util.CheckErr(err,
-		"Worker %v could not listen on listenAddr: %v", w.config.WorkerId, listenAddr,
+	util.CheckErr(
+		err,
+		"Worker %v could not listen on listenAddr: %v", w.config.WorkerId,
+		listenAddr,
 	)
 
 	for {
 		conn, err := listen.Accept()
-		util.CheckErr(err,
+		util.CheckErr(
+			err,
 			"Worker %v could not accept connections\n", w.config.WorkerId,
 		)
 		go handler.ServeConn(conn)
@@ -215,8 +231,10 @@ func (w *Worker) Start() error {
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
 
-	util.CheckErr(err,
-		"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId, w.config.CoordAddr,
+	util.CheckErr(
+		err,
+		"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,
+		w.config.CoordAddr,
 	)
 
 	defer conn.Close()
@@ -225,7 +243,9 @@ func (w *Worker) Start() error {
 	hBeatAddr := w.startFCheckHBeat(
 		w.config.WorkerId, w.config.FCheckAckLocalAddress,
 	)
-	log.Printf("Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr)
+	log.Printf(
+		"Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr,
+	)
 
 	workerNode := WorkerNode{
 		w.config.WorkerId, w.config.WorkerAddr,
@@ -249,7 +269,8 @@ func (w *Worker) Start() error {
 	// setup local checkpoints storage for the worker
 	err = w.initializeCheckpoints()
 	util.CheckErr(
-		err, "Start: Worker %v could not setup checkpoints db\n", w.config.WorkerId,
+		err, "Start: Worker %v could not setup checkpoints db\n",
+		w.config.WorkerId,
 	)
 
 	// go wait for work to do
@@ -261,7 +282,13 @@ func (w *Worker) Start() error {
 func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep) error {
 	log.Printf("ComputeVertices - worker %v superstep %v \n", w.config.WorkerId, args.SuperStepNum)
 
+	currentValue := SP_UNUSED_VALUE
+	if w.Query.QueryType == PAGE_RANK {
+		currentValue = PR_UNUSED_VALUE
+	}
+
 	w.updateVerticesWithNewStep(args.SuperStepNum)
+	pendingMsgsExist := len(w.SuperStep.Messages) != 0
 	allVerticesInactive := true
 
 	for _, vertex := range w.Vertices {
@@ -272,13 +299,35 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 				allVerticesInactive = false
 			}
 		}
+		// if the current vertex is the source vertex, capture its value
+		vertexType := SHORTEST_PATH_DEST
+		if w.Query.QueryType == PAGE_RANK {
+			vertexType = PAGE_RANK
+		}
+
+		if IsTargetVertex(vertex.Id, w.Query.Nodes, vertexType) {
+
+			if w.Query.QueryType == SHORTEST_PATH {
+				currentValue = vertex.currentValue.(int)
+			} else if w.Query.QueryType == PAGE_RANK {
+				// todo
+			}
+
+		}
 	}
+
+	log.Printf(
+		"ComputeVertices: Worker Pending Msgs Status: %v, Worker All Vertices Inactive: %v\n",
+		pendingMsgsExist, allVerticesInactive,
+	)
 
 	if args.IsCheckpoint {
 		checkpoint := w.checkpoint()
 		_, err := w.storeCheckpoint(checkpoint)
-		util.CheckErr(err,
-			"Worker %v failed to checkpoint # %v\n", w.config.WorkerId, w.SuperStep.Id,
+		util.CheckErr(
+			err,
+			"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
+			w.SuperStep.Id,
 		)
 	}
 
@@ -299,30 +348,42 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 			w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
 
 			if err != nil {
-				log.Printf("Worker %v could not establish connection to destination worker %v at addr %v\n",
-					w.config.WorkerId, worker, w.workerDirectory[worker])
+				log.Printf(
+					"Worker %v could not establish connection to destination worker %v at addr %v\n",
+					w.config.WorkerId, worker, w.workerDirectory[worker],
+				)
 			}
 		}
 
-		err := w.workerCallBook[worker].Call("Worker.PutBatchedMessages", batch, &unused)
+		err := w.workerCallBook[worker].Call(
+			"Worker.PutBatchedMessages", batch, &unused,
+		)
 		if err != nil {
-			log.Printf("ComputeVertices: worker %v could not send messages to worker: %v\n",
-				w.config.WorkerId, worker)
+			log.Printf(
+				"ComputeVertices: worker %v could not send messages to worker: %v\n",
+				w.config.WorkerId, worker,
+			)
 		}
-		log.Printf("Worker #%v sending %v messages\n", w.config.WorkerId, len(batch.Batch))
+		log.Printf(
+			"Worker #%v sending %v messages\n", w.config.WorkerId,
+			len(batch.Batch),
+		)
 	}
 
 	resp.SuperStepNum = w.SuperStep.Id
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = !allVerticesInactive
+	resp.CurrentValue = currentValue
 
 	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", w.SuperStep.Id, resp.IsActive, resp)
 	err := w.handleSuperStepDone()
 
 	if err != nil {
 		log.Printf("ComputeVertices: err: %v\n", err)
-		log.Printf("ComputeVertices: worker %v could not complete superstep # %v\n",
-			w.config.WorkerId, w.SuperStep.Id)
+		log.Printf(
+			"ComputeVertices: worker %v could not complete superstep # %v\n",
+			w.config.WorkerId, w.SuperStep.Id,
+		)
 	}
 
 	return nil

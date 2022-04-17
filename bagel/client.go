@@ -53,6 +53,11 @@ func (c *GraphClient) doQuery(query Query) {
 	}
 
 	log.Printf("client received result: %v\n", result)
+
+	if result.Error != "" {
+		log.Printf("client received error: %v\n", result)
+	}
+
 	c.notifyCh <- result
 }
 

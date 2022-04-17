@@ -41,17 +41,13 @@ func getDBConnection() (*sql.DB, error) {
 	return db, nil
 }
 
-func getVertexById(id int) (*DBVertexResult, error) {
+func GetVertexById(id int) (*DBVertexResult, error) {
 	getDBConnection()
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
 	}
-	rows, err := db.Query("SELECT * FROM " + tableName + " WHERE srcVertex = " + strconv.Itoa(id) + ";")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+
 	// Query for a value based on a single row.
 	var searchID uint64
 	var hash string
