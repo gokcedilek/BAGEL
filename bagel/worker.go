@@ -36,14 +36,15 @@ type WorkerConfig struct {
 
 type Worker struct {
 	// Worker state may go here
-	config          WorkerConfig
-	SuperStep       *SuperStep
-	NextSuperStep   *SuperStep
-	Query           Query
-	Vertices        map[uint64]Vertex
-	workerDirectory WorkerDirectory
-	workerCallBook  WorkerCallBook
-	NumWorkers      uint32
+	config                WorkerConfig
+	SuperStep             *SuperStep
+	NextSuperStep         *SuperStep
+	Query                 Query
+	Vertices              map[uint64]Vertex
+	workerDirectory       WorkerDirectory
+	workerCallBook        WorkerCallBook
+	NumWorkers            uint32
+	WasPreviousSSInactive bool
 }
 
 type Checkpoint struct {
@@ -64,11 +65,12 @@ type BatchedMessages struct {
 
 func NewWorker(config WorkerConfig) *Worker {
 	return &Worker{
-		config:         config,
-		SuperStep:      NewSuperStep(0),
-		NextSuperStep:  NewSuperStep(1),
-		Vertices:       make(map[uint64]Vertex),
-		workerCallBook: make(WorkerCallBook),
+		config:                config,
+		SuperStep:             NewSuperStep(0),
+		NextSuperStep:         NewSuperStep(1),
+		Vertices:              make(map[uint64]Vertex),
+		workerCallBook:        make(WorkerCallBook),
+		WasPreviousSSInactive: false,
 	}
 }
 
@@ -309,14 +311,19 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		log.Printf("Worker #%v sending %v messages\n", w.config.WorkerId, len(batch.Batch))
 	}
 
-	if !pendingMsgsExist && allVerticesInactive {
+	shouldNotifyCoordInactive := !w.IsWorkerActive(pendingMsgsExist, allVerticesInactive) && w.WasPreviousSSInactive
+
+	if !w.IsWorkerActive(pendingMsgsExist, allVerticesInactive) {
+		w.WasPreviousSSInactive = true
 		log.Printf("ComputeVertices: All vertices are inactive - worker is inactive.\n")
+	} else {
+		w.WasPreviousSSInactive = false
 	}
 
 	resp = &ProgressSuperStep{
 		SuperStepNum: w.SuperStep.Id,
 		IsCheckpoint: args.IsCheckpoint,
-		IsActive:     pendingMsgsExist || !allVerticesInactive,
+		IsActive:     shouldNotifyCoordInactive,
 	}
 
 	err := w.handleSuperStepDone()
@@ -424,4 +431,8 @@ func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 			delete(w.workerCallBook, workerId)
 		}
 	}
+}
+
+func (w *Worker) IsWorkerActive(isPendingMsgExists bool, allVerticesInactive bool) bool {
+	return isPendingMsgExists || !allVerticesInactive
 }
