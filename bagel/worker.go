@@ -128,11 +128,11 @@ func (w *Worker) StartQuery(
 	for _, v := range vertices {
 		var pianoVertex Vertex
 		if w.Query.QueryType == SHORTEST_PATH {
-			vertexValue := math.MaxInt64
-			if IsTargetVertex(v.VertexID, w.Query.Nodes, SHOREST_PATH_SOURCE) {
-				vertexValue = 0
+			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt64)
+			if IsTargetVertex(v.VertexID, w.Query.Nodes, SHORTEST_PATH_SOURCE) {
+				initialMessage := Message{0, INITIALIZATION_VERTEX, v.VertexID, 0}
+				pianoVertex.messages = append(pianoVertex.messages, initialMessage)
 			}
-			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, vertexValue)
 		} else {
 			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
 		}
@@ -311,9 +311,8 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 		log.Printf("Worker #%v sending %v messages\n", w.config.WorkerId, len(batch.Batch))
 	}
 
-	
 	shouldNotifyCoordActive, prevActive := w.IsWorkerActive(pendingMsgsExist, allVerticesInactive)
-	w.WasPreviousSSInactive = !prevActive 
+	w.WasPreviousSSInactive = !prevActive
 
 	resp = &ProgressSuperStep{
 		SuperStepNum: w.SuperStep.Id,
@@ -433,7 +432,6 @@ func (w *Worker) IsWorkerActive(isPendingMsgExists bool, allVerticesInactive boo
 	if w.SuperStep.Id == 0 {
 		return true, true
 	}
-
 
 	isWorkerActive = true
 	if isPendingMsgExists || !allVerticesInactive {

@@ -6,7 +6,8 @@ import (
 )
 
 const (
-	EPSILON = 1e-3
+	EPSILON               = 1e-3
+	INITIALIZATION_VERTEX = math.MaxUint64
 )
 
 // Vertex stores intermediate calculation data about the vertex
@@ -45,6 +46,8 @@ func NewVertex(id uint64, neighbors []uint64) *Vertex {
 func NewPageRankVertex(id uint64, neighbors []uint64) *Vertex {
 	prVertex := NewVertex(id, neighbors)
 	prVertex.currentValue = float64(1)
+	initialMessage := Message{0, INITIALIZATION_VERTEX, id, 0.85}
+	prVertex.messages = append(prVertex.messages, initialMessage)
 	return prVertex
 }
 
@@ -99,7 +102,9 @@ func (v *Vertex) ComputePageRank() []Message {
 	// update flow values
 	for _, message := range v.messages {
 		flowValue := message.Value.(float64) // cast to an int
-		v.previousValues[message.SourceVertexId] = flowValue
+		if message.SourceVertexId != INITIALIZATION_VERTEX {
+			v.previousValues[message.SourceVertexId] = flowValue
+		}
 	}
 
 	// calculate new value
@@ -129,7 +134,7 @@ func IsTargetVertex(vertexId uint64, vertices []uint64, vertexType string) bool 
 	switch vertexType {
 	case SHOREST_PATH_DEST:
 		return isTargetSPVertex(vertexId, vertices)
-	case SHOREST_PATH_SOURCE:
+	case SHORTEST_PATH_SOURCE:
 		return isSourceSPVertex(vertexId, vertices)
 	case PAGE_RANK:
 		return isTargetPRVertex(vertexId, vertices)

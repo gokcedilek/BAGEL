@@ -4,10 +4,10 @@ import "net/rpc"
 
 // constants are used as msgType for the messages
 const (
-	PAGE_RANK           = "PageRank"
-	SHORTEST_PATH       = "ShortestPath"
-	SHOREST_PATH_SOURCE = "ShortestPathSource"
-	SHOREST_PATH_DEST   = "ShortestPathDestination"
+	PAGE_RANK            = "PageRank"
+	SHORTEST_PATH        = "ShortestPath"
+	SHORTEST_PATH_SOURCE = "ShortestPathSource"
+	SHOREST_PATH_DEST    = "ShortestPathDestination"
 )
 
 // TODO: may be needed for the queryWorkers queue
