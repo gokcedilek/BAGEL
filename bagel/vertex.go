@@ -127,9 +127,9 @@ func (v *Vertex) ComputePageRank() []Message {
 
 func IsTargetVertex(vertexId uint64, vertices []uint64, vertexType string) bool {
 	switch vertexType {
-	case SHOREST_PATH_DEST:
+	case SHORTEST_PATH_DEST:
 		return isTargetSPVertex(vertexId, vertices)
-	case SHOREST_PATH_SOURCE:
+	case SHORTEST_PATH_SOURCE:
 		return isSourceSPVertex(vertexId, vertices)
 	case PAGE_RANK:
 		return isTargetPRVertex(vertexId, vertices)

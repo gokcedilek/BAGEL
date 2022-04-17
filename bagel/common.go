@@ -1,19 +1,19 @@
 package bagel
 
-import "net/rpc"
+import (
+	"math"
+	"net/rpc"
+)
 
 // constants are used as msgType for the messages
 const (
-	PAGE_RANK           = "PageRank"
-	SHORTEST_PATH       = "ShortestPath"
-	SHOREST_PATH_SOURCE = "ShortestPathSource"
-	SHOREST_PATH_DEST   = "ShortestPathDestination"
+	PAGE_RANK            = "PageRank"
+	SHORTEST_PATH        = "ShortestPath"
+	SHORTEST_PATH_SOURCE = "ShortestPathSource"
+	SHORTEST_PATH_DEST   = "ShortestPathDestination"
+	PR_UNUSED_VALUE      = math.MaxFloat64
+	SP_UNUSED_VALUE      = math.MaxInt64
 )
-
-// TODO: may be needed for the queryWorkers queue
-//type WorkerInfo struct {
-//	WorkerId uint32
-//}
 
 type WorkerNode struct {
 	WorkerId         uint32
@@ -32,6 +32,13 @@ type ProgressSuperStep struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
 	IsActive     bool
+}
+
+type ProgressSuperStepResult struct {
+	SuperStepNum uint64
+	IsCheckpoint bool
+	IsActive     bool
+	CurrentValue interface{}
 }
 
 type SuperStepComplete struct {
@@ -58,6 +65,7 @@ type Query struct {
 type QueryResult struct {
 	Query  Query
 	Result interface{} // client dynamically casts Result based on Query.QueryType:
+	Error  string
 	// float64 for pagerank, int for shortest path
 }
 
