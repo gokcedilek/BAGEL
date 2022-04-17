@@ -286,8 +286,13 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 			}
 		}
 
+		vertexType := PAGE_RANK
+		if w.Query.QueryType == SHORTEST_PATH {
+			vertexType = SHORTEST_PATH_DEST
+		}
+
 		// if the current vertex is the source vertex, capture its value
-		if IsTargetVertex(vertex.Id, w.Query.Nodes, w.Query.QueryType) {
+		if IsTargetVertex(vertex.Id, w.Query.Nodes, vertexType) {
 			resp.CurrentValue = vertex.currentValue
 		}
 	}

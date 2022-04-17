@@ -1,7 +1,6 @@
 package bagel
 
 import (
-	"math"
 	"net/rpc"
 )
 
@@ -10,8 +9,7 @@ const (
 	PAGE_RANK            = "PageRank"
 	SHORTEST_PATH        = "ShortestPath"
 	SHORTEST_PATH_SOURCE = "ShortestPathSource"
-	PR_UNUSED_VALUE      = math.MaxFloat64
-	SP_UNUSED_VALUE      = math.MaxInt64
+	SHORTEST_PATH_DEST   = "ShortestPathDestination"
 )
 
 type WorkerNode struct {
