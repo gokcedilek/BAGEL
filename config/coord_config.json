@@ -1,6 +1,6 @@
 {
-  "ClientAPIListenAddr": "thetis.students.cs.ubc.ca:54321",
-  "WorkerAPIListenAddr": "thetis.students.cs.ubc.ca:12444",
+  "ClientAPIListenAddr": "thetis.students.cs.ubc.ca:54421",
+  "WorkerAPIListenAddr": "thetis.students.cs.ubc.ca:12544",
   "LostMsgsThresh": 3,
   "StepsBetweenCheckpoints": 5
 }

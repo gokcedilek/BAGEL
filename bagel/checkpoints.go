@@ -10,6 +10,11 @@ import (
 	"project/util"
 )
 
+type Checkpoint struct {
+	SuperStepNumber uint64
+	CheckpointState map[uint64]VertexCheckpoint
+}
+
 func (w *Worker) getConnection() (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", fmt.Sprintf("checkpoints%v.db", w.config.WorkerId))
 	if err != nil {

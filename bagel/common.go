@@ -2,16 +2,15 @@ package bagel
 
 import (
 	"net/rpc"
-	"math"
 )
 
 // constants are used as msgType for the messages
 const (
-	PAGE_RANK     = "PageRank"
-	SHORTEST_PATH = "ShortestPath"
+	PAGE_RANK            = "PageRank"
+	SHORTEST_PATH        = "ShortestPath"
+	SHORTEST_PATH_SOURCE = "ShortestPathSource"
+	SHORTEST_PATH_DEST   = "ShortestPathDestination"
 )
-
-const UNUSED_VALUE = math.MaxFloat64
 
 type WorkerNode struct {
 	WorkerId         uint32
@@ -23,14 +22,12 @@ type WorkerNode struct {
 type StartSuperStep struct {
 	NumWorkers      uint8
 	WorkerDirectory WorkerDirectory
-	QueryType       string
-	QueryVertex     uint64 // the target vertex if doing shortest paths and the only vertex if doing pagerank
+	Query           Query
 }
 
 type ProgressSuperStep struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
-	IsActive     bool
 }
 
 type ProgressSuperStepResult struct {
@@ -40,17 +37,28 @@ type ProgressSuperStepResult struct {
 	CurrentValue interface{}
 }
 
-type SuperStepComplete struct {
-	IsActive bool
-}
-
 type RestartSuperStep struct {
 	SuperStepNumber uint64
+	WorkerDirectory WorkerDirectory
 }
 
 type CheckpointMsg struct {
 	SuperStepNumber uint64
 	WorkerId        uint32
+}
+
+type Query struct {
+	ClientId  string
+	QueryType string   // PageRank or ShortestPath
+	Nodes     []uint64 // if PageRank, will have 1 vertex, if shortestpath, will have [start, end]
+	Graph     string   // graph to use - will always be google for now
+}
+
+type QueryResult struct {
+	Query  Query
+	Result interface{} // client dynamically casts Result based on Query.QueryType:
+	Error  string
+	// float64 for pagerank, int for shortest path
 }
 
 // WorkerDirectory maps worker ids to address (string)

@@ -270,7 +270,6 @@ func createNewTestVertex(initialVal interface{}) Vertex {
 		currentValue:   initialVal,
 		messages:       make([]Message, 0),
 		isActive:       true,
-		workerAddr:     "",
 		SuperStep:      TEST_SUPERSTEP,
 	}
 	return vertex
