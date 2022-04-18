@@ -54,6 +54,7 @@ func NewCoord() *Coord {
 		workers:               make(map[uint32]*rpc.Client),
 		queryWorkers:          make(WorkerCallBook),
 		queryWorkersDirectory: make(WorkerDirectory),
+		superStepNumber:       1,
 	}
 }
 
@@ -88,19 +89,10 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	// create new map of checkpoints for a new query which may have different number of workers
 	c.lastWorkerCheckpoints = make(map[uint32]uint64)
 
-	var startSuperStep StartSuperStep
-	if q.QueryType == SHORTEST_PATH {
-		startSuperStep = StartSuperStep{
-			NumWorkers:      uint8(len(c.queryWorkers)),
-			WorkerDirectory: c.queryWorkersDirectory,
-			Query:           q,
-		}
-	} else {
-		startSuperStep = StartSuperStep{
-			NumWorkers:      uint8(len(c.queryWorkers)),
-			WorkerDirectory: c.queryWorkersDirectory,
-			Query:           q,
-		}
+	startSuperStep := StartSuperStep{
+		NumWorkers:      uint8(len(c.queryWorkers)),
+		WorkerDirectory: c.queryWorkersDirectory,
+		Query:           q,
 	}
 
 	numWorkers := len(c.queryWorkers)
@@ -267,7 +259,7 @@ func (c *Coord) Compute() (interface{}, error) {
 			for _, wClient := range c.queryWorkers {
 				var result ProgressSuperStepResult
 				wClient.Go(
-					"Worker.ComputeVertices", progressSuperStep, &result,
+					"Worker.ComputeVertices", &progressSuperStep, &result,
 					c.workerDoneCompute,
 				)
 			}

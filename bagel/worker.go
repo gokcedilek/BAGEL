@@ -43,6 +43,7 @@ type Worker struct {
 	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
 	QueryVertex     uint64
+	nextStepMutex   sync.Mutex
 }
 
 type SuperStep struct {
@@ -122,13 +123,15 @@ func (w *Worker) StartQuery(
 	for _, v := range vertices {
 		var pianoVertex Vertex
 		if w.Query.QueryType == SHORTEST_PATH {
-			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt64)
+			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt32)
 			if IsTargetVertex(v.VertexID, w.Query.Nodes, SHORTEST_PATH_SOURCE) {
 				initialMessage := Message{0, INITIALIZATION_VERTEX, v.VertexID, 0}
-				pianoVertex.messages = append(pianoVertex.messages, initialMessage)
+				w.NextSuperStep.Messages[v.VertexID] = append(w.NextSuperStep.Messages[v.VertexID], initialMessage)
 			}
 		} else {
 			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
+			initialMessage := Message{0, INITIALIZATION_VERTEX, v.VertexID, 0.85}
+			w.NextSuperStep.Messages[v.VertexID] = append(w.NextSuperStep.Messages[v.VertexID], initialMessage)
 		}
 		w.Vertices[v.VertexID] = pianoVertex
 	}
@@ -271,13 +274,17 @@ func (w *Worker) Start() error {
 	return nil
 }
 
-func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStepResult) error {
+func (w *Worker) ComputeVertices(args *ProgressSuperStep, resp *ProgressSuperStepResult) error {
+
+	err := w.switchToNextSuperStep()
+	if err != nil {
+		log.Printf("ComputeVertices: worker %v could not switch to superstep %v", w.config.WorkerId, args.SuperStepNum)
+	}
 	log.Printf("ComputeVertices - worker %v superstep %v \n", w.config.WorkerId, args.SuperStepNum)
 
-	w.updateVerticesWithNewStep(args.SuperStepNum)
 	hasActiveVertex := false
-
 	for _, vertex := range w.Vertices {
+		vertex.SetSuperStepInfo(args.SuperStepNum, w.SuperStep.Messages[vertex.Id])
 		if len(vertex.messages) > 0 {
 			messages := vertex.Compute(w.Query.QueryType)
 			w.updateOutgoingMessages(messages)
@@ -309,15 +316,15 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 
 	for worker, msgs := range w.SuperStep.Outgoing {
 		if worker == w.config.WorkerId {
+			w.nextStepMutex.Lock()
 			for _, msg := range msgs {
 				w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
 			}
+			w.nextStepMutex.Unlock()
 			continue
 		}
 
 		batch := BatchedMessages{Batch: msgs}
-		var unused Message
-		// todo change to Go
 
 		if _, exists := w.workerCallBook[worker]; !exists {
 			var err error
@@ -331,6 +338,7 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 			}
 		}
 
+		var unused Message
 		err := w.workerCallBook[worker].Call(
 			"Worker.PutBatchedMessages", batch, &unused,
 		)
@@ -351,43 +359,29 @@ func (w *Worker) ComputeVertices(args ProgressSuperStep, resp *ProgressSuperStep
 	resp.IsActive = hasActiveVertex
 
 	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", w.SuperStep.Id, resp.IsActive, resp)
-	err := w.handleSuperStepDone()
-
-	if err != nil {
-		log.Printf("ComputeVertices: err: %v\n", err)
-		log.Printf(
-			"ComputeVertices: worker %v could not complete superstep # %v\n",
-			w.config.WorkerId, w.SuperStep.Id,
-		)
-	}
 
 	return nil
 }
 
-func (w *Worker) updateVerticesWithNewStep(superStepNum uint64) {
-	for vId, v := range w.Vertices {
-		v.SuperStep = superStepNum
-		v.messages = w.SuperStep.Messages[vId]
-	}
-}
-
 func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error {
-	log.Printf("Worker %v received %v messages", w.config.WorkerId, len(batch.Batch))
+	w.nextStepMutex.Lock()
 	for _, msg := range batch.Batch {
 		w.NextSuperStep.Messages[msg.DestVertexId] = append(w.NextSuperStep.Messages[msg.DestVertexId], msg)
 	}
+	log.Printf("Worker %v received %v messages", w.config.WorkerId, len(batch.Batch))
+	w.nextStepMutex.Unlock()
 
 	resp = &Message{}
 	return nil
 }
 
-func (w *Worker) handleSuperStepDone() error {
+func (w *Worker) switchToNextSuperStep() error {
 	log.Printf(
-		"handleSuperStepDone: Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
+		"switchToNextSuperStep: Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
 		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
 	)
 
-	*w.SuperStep = *w.NextSuperStep
+	w.SuperStep = w.NextSuperStep
 	w.NextSuperStep = NewSuperStep(w.SuperStep.Id + 1)
 	return nil
 }

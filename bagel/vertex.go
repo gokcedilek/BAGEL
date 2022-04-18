@@ -41,8 +41,6 @@ func NewVertex(id uint64, neighbors []uint64) *Vertex {
 func NewPageRankVertex(id uint64, neighbors []uint64) *Vertex {
 	prVertex := NewVertex(id, neighbors)
 	prVertex.currentValue = float64(1)
-	initialMessage := Message{0, INITIALIZATION_VERTEX, id, 0.85}
-	prVertex.messages = append(prVertex.messages, initialMessage)
 	return prVertex
 }
 
@@ -52,8 +50,10 @@ func NewShortestPathVertex(id uint64, neighbors []uint64, value int) *Vertex {
 	return spVertex
 }
 
-type ShortestPathVertex Vertex
-type PageRankVertex Vertex
+func (v *Vertex) SetSuperStepInfo(superStepNum uint64, messages []Message) {
+	v.SuperStep = superStepNum
+	v.messages = messages
+}
 
 func (v *Vertex) Compute(queryType string) []Message {
 	var result []Message
@@ -69,7 +69,7 @@ func (v *Vertex) Compute(queryType string) []Message {
 
 func (v *Vertex) ComputeShortestPath() []Message {
 	result := make([]Message, 0)
-	shortestNewPath := math.MaxInt64
+	shortestNewPath := math.MaxInt32
 	for _, message := range v.messages {
 		pathLength := message.Value.(int) // cast to an int
 		v.previousValues[message.SourceVertexId] = pathLength
@@ -127,10 +127,10 @@ func (v *Vertex) ComputePageRank() []Message {
 
 func IsTargetVertex(vertexId uint64, vertices []uint64, vertexType string) bool {
 	switch vertexType {
-	case SHORTEST_PATH:
-		return isTargetSPVertex(vertexId, vertices)
 	case SHORTEST_PATH_SOURCE:
 		return isSourceSPVertex(vertexId, vertices)
+	case SHORTEST_PATH_DEST:
+		return isTargetSPVertex(vertexId, vertices)
 	case PAGE_RANK:
 		return isTargetPRVertex(vertexId, vertices)
 	default:
