@@ -25,6 +25,16 @@ type Vertex struct {
 	neighbors    []uint64
 }
 
+type DatabaseConfig struct {
+	DatabaseName string
+	ServerAddr   string
+	Port         int
+	Username     string
+	Password     string
+	Database     string
+	TableName    string
+}
+
 var (
 	nodeAdjacencyList map[uint32][]uint32
 	db                *sql.DB
@@ -42,7 +52,7 @@ var (
 
 // 	connectToDb()
 // 	// createAdjList()
-// 	// addAjdList()
+// 	// addAdjList()
 
 // 	v, err := getVertex(728666)
 // 	if err != nil {
@@ -50,6 +60,14 @@ var (
 // 	}
 // 	fmt.Printf("Vertex found: %v\n", v)
 // }
+
+func SetupDatabase(config DatabaseConfig) error {
+	initializeDB(config.DatabaseName)
+	err := connectToDb()
+	createAdjList()
+	addAdjList()
+
+}
 
 func connectToDb() error {
 	// Build connection string
@@ -94,7 +112,7 @@ func initializeDB(name string) {
 }
 
 // `nohup go run db-test.go &`
-func addAjdList() {
+func addAdjList() {
 	if db == nil {
 		fmt.Println("Not connected to Database yet")
 		panic("aaa")
@@ -113,24 +131,6 @@ func addAjdList() {
 			panic(err)
 		}
 		fmt.Printf("Inserted %v and its %v neighbors\n", id, len(neighbors))
-	}
-}
-
-func addGraphOld(name string) {
-	// fmt.Printf("%v", db)
-	if db == nil {
-		fmt.Println("Not connected to Database yet")
-		panic("aaa")
-	}
-
-	_, err := db.Exec("INSERT INTO " + tableName + " (vertex1, vertex2) VALUES (-1, -1)")
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = db.Exec("DELETE FROM " + tableName + " WHERE vertex1=-1;")
-	if err != nil {
-		panic(err)
 	}
 }
 
