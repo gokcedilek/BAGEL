@@ -356,7 +356,7 @@ func (w *Worker) ComputeVertices(args *ProgressSuperStep, resp *ProgressSuperSte
 
 	resp.SuperStepNum = w.SuperStep.Id
 	resp.IsCheckpoint = args.IsCheckpoint
-	resp.IsActive = hasActiveVertex
+	resp.IsActive = hasActiveVertex && w.SuperStep.Id < MAX_ITERATIONS
 
 	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", w.SuperStep.Id, resp.IsActive, resp)
 

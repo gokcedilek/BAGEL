@@ -6,7 +6,8 @@ import (
 )
 
 const (
-	EPSILON               = 1e-3
+	EPSILON               = 0.05
+	MAX_ITERATIONS        = 500
 	INITIALIZATION_VERTEX = math.MaxUint64
 )
 
