@@ -94,16 +94,19 @@ func (v *Vertex) ComputeShortestPath() []Message {
 }
 
 func (v *Vertex) ComputePageRank() []Message {
+	totalFlow := 0.15
+
 	// update flow values
 	for _, message := range v.messages {
 		flowValue := message.Value.(float64) // cast to an int
-		if message.SourceVertexId != INITIALIZATION_VERTEX {
+		if message.SourceVertexId == INITIALIZATION_VERTEX {
+			totalFlow += flowValue
+		} else {
 			v.previousValues[message.SourceVertexId] = flowValue
 		}
 	}
 
 	// calculate new value
-	totalFlow := 0.15
 	for _, flowValue := range v.previousValues {
 		totalFlow += flowValue.(float64)
 	}
