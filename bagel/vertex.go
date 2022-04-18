@@ -40,7 +40,7 @@ func NewVertex(id uint64, neighbors []uint64) *Vertex {
 
 func NewPageRankVertex(id uint64, neighbors []uint64) *Vertex {
 	prVertex := NewVertex(id, neighbors)
-	prVertex.currentValue = float64(1)
+	prVertex.currentValue = float64(0)
 	return prVertex
 }
 
