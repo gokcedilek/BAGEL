@@ -1,7 +1,7 @@
 {
   "WorkerId": 2,
-  "CoordAddr": "thetis.students.cs.ubc.ca:12444",
-  "WorkerAddr": "anvil.students.cs.ubc.ca:22223",
-  "WorkerListenAddr": "anvil.students.cs.ubc.ca:22224",
-  "FCheckAckLocalAddress": "anvil.students.cs.ubc.ca:54346"
+  "CoordAddr": "thetis.students.cs.ubc.ca:12544",
+  "WorkerAddr": "remote.students.cs.ubc.ca:33333",
+  "WorkerListenAddr": "remote.students.cs.ubc.ca:33332",
+  "FCheckAckLocalAddress": "remote.students.cs.ubc.ca:54347"
 }

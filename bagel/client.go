@@ -21,20 +21,6 @@ type GraphClient struct {
 	notifyCh    chan QueryResult
 }
 
-type Query struct {
-	ClientId  string
-	QueryType string   // PageRank or ShortestPath
-	Nodes     []uint64 // if PageRank, will have 1 vertex, if shortestpath, will have [start, end]
-	Graph     string   // graph to use - will always be google for now
-}
-
-type QueryResult struct {
-	Query  Query
-	Result interface{} // client dynamically casts Result based on Query.QueryType:
-	// float64 for pagerank, int for shortest path
-	Error string
-}
-
 func NewClient() *GraphClient {
 	return &GraphClient{}
 }

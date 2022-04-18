@@ -74,7 +74,7 @@ func GetVerticesModulo(workerId uint32, numWorkers uint8) ([]DBVertexResult, err
 		panic("aaa")
 	}
 	result, err := db.Query(
-		"SELECT * from " + tableName + " where srcVertex % " + strconv.Itoa(int(numWorkers)) + " = " + strconv.Itoa(int(workerId)-1) + ";")
+		"SELECT * from " + tableName + " where srcVertex % " + strconv.Itoa(int(numWorkers)) + " = " + strconv.Itoa(int(workerId)) + ";")
 	if err != nil {
 		fmt.Printf("error: %v\n", err)
 		panic("query went wrong")
