@@ -38,7 +38,7 @@ type Worker struct {
 	SuperStep       *SuperStep
 	NextSuperStep   *SuperStep
 	Query           Query
-	Vertices        map[uint64]Vertex
+	Vertices        map[uint64]*Vertex
 	workerDirectory WorkerDirectory
 	workerCallBook  WorkerCallBook
 	NumWorkers      uint32
@@ -62,7 +62,7 @@ func NewWorker(config WorkerConfig) *Worker {
 		config:         config,
 		SuperStep:      NewSuperStep(0),
 		NextSuperStep:  NewSuperStep(1),
-		Vertices:       make(map[uint64]Vertex),
+		Vertices:       make(map[uint64]*Vertex),
 		workerCallBook: make(WorkerCallBook),
 	}
 }
@@ -133,7 +133,7 @@ func (w *Worker) StartQuery(
 			initialMessage := Message{0, INITIALIZATION_VERTEX, v.VertexID, 0.85}
 			w.NextSuperStep.Messages[v.VertexID] = append(w.NextSuperStep.Messages[v.VertexID], initialMessage)
 		}
-		w.Vertices[v.VertexID] = pianoVertex
+		w.Vertices[v.VertexID] = &pianoVertex
 	}
 	log.Printf("total # vertices belonging to worker: %v\n", len(w.Vertices))
 	return nil
@@ -388,7 +388,9 @@ func (w *Worker) switchToNextSuperStep() error {
 
 func (w *Worker) updateOutgoingMessages(msgs []Message) {
 	for _, msg := range msgs {
-		destWorker := util.HashId(msg.DestVertexId) % uint64(w.NumWorkers)
+		// TODO: fix to use the commented out line
+		// destWorker := util.HashId(msg.DestVertexId) % uint64(w.NumWorkers)
+		destWorker := msg.DestVertexId % uint64(w.NumWorkers)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
 }
