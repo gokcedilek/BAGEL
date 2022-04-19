@@ -36,17 +36,31 @@ type DatabaseConfig struct {
 	TableName    string
 }
 
+type DatabaseManager struct {
+	config            DatabaseConfig
+	db                *sql.DB
+	nodeAdjacencyList map[uint32][]uint32
+}
+
 var (
 	nodeAdjacencyList map[uint32][]uint32
 	db                *sql.DB
-	dbName            = "bagelDB_new"
+	dbName            = "bagelDB_dev"
 	tableName         = "adjList"
-	server            = "bagel.database.windows.net"
+	server            = "bagel-dev.database.windows.net"
 	port              = 1433
 	user              = "user"
 	password          = "Distributedgraph!"
-	database          = "bagel_2.0"
+	database          = "bagelDB_dev"
 )
+
+func NewDatabaseManager(config DatabaseConfig) *DatabaseManager {
+	return &DatabaseManager{
+		config:            config,
+		db:                nil,
+		nodeAdjacencyList: nil,
+	}
+}
 
 // InitializeDBVars Way of overwriting the db vars used in both db-setup and db-functions
 // 	Better to init as struct, but this will require both clients and coord to be aware
@@ -77,29 +91,14 @@ func InitializeDBVars(config DatabaseConfig) {
 func SetupDatabase(config DatabaseConfig) {
 	InitializeDBVars(config)
 	initializeDB()
-	err := connectToDb()
+	var err error
+	db, err = getDBConnection()
 
 	if err != nil {
 		log.Fatal("Could not establish connection to database. Exiting")
 	}
 	createAdjList()
 	addAdjList()
-
-}
-
-func connectToDb() error {
-	// Build connection string
-	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;",
-		server, user, password, port, database)
-	var err error
-	// Create connection pool
-	db, err = sql.Open("sqlserver", connString)
-	if err != nil {
-		log.Fatal("Error creating connection pool: ", err.Error())
-		return err
-	}
-	fmt.Println("connected to DB successfully!")
-	return nil
 }
 
 func initializeDB() {
@@ -132,7 +131,7 @@ func addAdjList() {
 		panic("aaa")
 	}
 
-	err := BulkInsert(nodeAdjacencyList, 3, "srcVertex, hash, neighbors")
+	err := bulkInsert(nodeAdjacencyList, 3, "srcVertex, hash, neighbors")
 	if err != nil {
 		log.Fatal("Failed to insert nodes", err)
 	}
@@ -181,12 +180,12 @@ func createAdjList() {
 	fmt.Printf("Node with the most neighbors is %v with %v neighbors\n", largest_neighbors_node, largest_neighbors)
 }
 
-func BulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) error {
+func bulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) error {
 	const maxParamsSQL = 2099
 	rowsPerInsert := maxParamsSQL / numParams
 	N := int(math.Ceil(float64(len(unsavedRows)) / float64(rowsPerInsert)))
 
-	bulks := getBulks(unsavedRows, N, rowsPerInsert)
+	batches := getBatches(unsavedRows, N, rowsPerInsert)
 
 	for i := 0; i < N; i++ {
 		startTime := time.Now()
@@ -194,9 +193,9 @@ func BulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) e
 		valueArgs := make([]interface{}, 0, rowsPerInsert*numParams)
 
 		startOrdinalPosition := 1
-		for id, neighbors := range bulks[i] {
+		for id, neighbors := range batches[i] {
 			neighborsString := arrayToString(neighbors, ".") //normal delimiters cause problems with SQL
-			valueStrings = append(valueStrings, GetParamPlaceHolders(startOrdinalPosition))
+			valueStrings = append(valueStrings, getParamPlaceHolders(startOrdinalPosition))
 			valueArgs = append(valueArgs, id)
 			valueArgs = append(valueArgs, util.HashId(uint64(id)))
 			valueArgs = append(valueArgs, neighborsString)
@@ -214,27 +213,27 @@ func BulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) e
 	return nil
 }
 
-func GetParamPlaceHolders(startOrdinalPosition int) string {
+func getParamPlaceHolders(startOrdinalPosition int) string {
 	return fmt.Sprintf("(@p%d, @p%d, @p%d)",
 		startOrdinalPosition,
 		startOrdinalPosition+1,
 		startOrdinalPosition+2)
 }
 
-func getBulks(total map[uint32][]uint32, n int, rowsPerBulk int) []map[uint32][]uint32 {
-	bulks := make([]map[uint32][]uint32, 0, n)
+func getBatches(total map[uint32][]uint32, n int, rowsPerBulk int) []map[uint32][]uint32 {
+	batches := make([]map[uint32][]uint32, 0, n)
 
 	for i := 0; i < n; i++ {
-		bulks = append(bulks, make(map[uint32][]uint32))
+		batches = append(batches, make(map[uint32][]uint32))
 	}
 
 	cnt := 0
 
 	for id, neighbors := range total {
 		idx := cnt / rowsPerBulk
-		bulks[idx][id] = neighbors
+		batches[idx][id] = neighbors
 		cnt++
 	}
 
-	return bulks
+	return batches
 }

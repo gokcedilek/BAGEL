@@ -1,7 +1,7 @@
 {
   "WorkerId": 0,
-  "CoordAddr": "thetis.students.cs.ubc.ca:12544",
-  "WorkerAddr": "thetis.students.cs.ubc.ca:11123",
-  "WorkerListenAddr": "thetis.students.cs.ubc.ca:11124",
-  "FCheckAckLocalAddress": "thetis.students.cs.ubc.ca:54355"
+  "CoordAddr": ":12544",
+  "WorkerAddr": ":11123",
+  "WorkerListenAddr": ":11124",
+  "FCheckAckLocalAddress": ":54355"
 }
