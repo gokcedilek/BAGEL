@@ -1,4 +1,4 @@
-package database
+package main
 
 import (
 	"io"
@@ -43,5 +43,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	database.SetupDatabase(config)
 
 }

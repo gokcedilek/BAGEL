@@ -4,6 +4,6 @@
   "Port": 1433,
   "Username": "user",
   "Password": "Distributedgraph!",
-  "Database": "bagel_2.0",
+  "Database": "bagelDB_dev",
   "TableName": "adjList"
 }
