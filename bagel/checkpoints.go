@@ -53,7 +53,7 @@ func (w *Worker) initializeCheckpoints() error {
 	return nil
 }
 
-func (w *Worker) checkpoint() Checkpoint {
+func (w *Worker) checkpoint(superStepNum uint64) Checkpoint {
 	checkPointState := make(map[uint64]VertexCheckpoint)
 
 	for k, v := range w.Vertices {
@@ -65,7 +65,7 @@ func (w *Worker) checkpoint() Checkpoint {
 	}
 
 	return Checkpoint{
-		SuperStepNumber: w.SuperStep.Id,
+		SuperStepNumber: superStepNum,
 		CheckpointState: checkPointState,
 	}
 }

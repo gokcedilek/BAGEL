@@ -301,7 +301,7 @@ func (w *Worker) ComputeVertices(args *ProgressSuperStep, resp *ProgressSuperSte
 	}
 
 	if args.IsCheckpoint {
-		checkpoint := w.checkpoint()
+		checkpoint := w.checkpoint(args.SuperStepNum)
 		_, err := w.storeCheckpoint(checkpoint)
 		util.CheckErr(
 			err,
