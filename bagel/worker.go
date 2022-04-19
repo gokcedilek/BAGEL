@@ -287,7 +287,7 @@ func (w *Worker) ComputeVertices(args *ProgressSuperStep, resp *ProgressSuperSte
 		vertex.SetSuperStepInfo(args.SuperStepNum, w.SuperStep.Messages[vertex.Id])
 		if len(vertex.messages) > 0 {
 			messages := vertex.Compute(w.Query.QueryType)
-			w.updateOutgoingMessages(messages)
+			w.mapMessagesToWorkers(messages)
 			if vertex.isActive {
 				hasActiveVertex = true
 			}
@@ -386,11 +386,9 @@ func (w *Worker) switchToNextSuperStep() error {
 	return nil
 }
 
-func (w *Worker) updateOutgoingMessages(msgs []Message) {
+func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 	for _, msg := range msgs {
-		// TODO: fix to use the commented out line
-		// destWorker := util.HashId(msg.DestVertexId) % uint64(w.NumWorkers)
-		destWorker := msg.DestVertexId % uint64(w.NumWorkers)
+		destWorker := util.GetFlooredModulo(util.HashId(msg.DestVertexId), int64(w.NumWorkers))
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(w.SuperStep.Outgoing[uint32(destWorker)], msg)
 	}
 }

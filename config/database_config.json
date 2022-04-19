@@ -1,0 +1,9 @@
+{
+  "DatabaseName": "bagelDB_new",
+  "ServerAddr": "bagel.database.windows.net",
+  "Port": 1433,
+  "Username": "user",
+  "Password": "Distributedgraph!",
+  "Database": "bagel_2.0",
+  "TableName": "adjList"
+}
