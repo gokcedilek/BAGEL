@@ -188,21 +188,21 @@ func BulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) e
 
 	bulks := getBulks(unsavedRows, N, rowsPerInsert)
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < N; i++ {
 		startTime := time.Now()
 		valueStrings := make([]string, 0, rowsPerInsert)
-		valueArgs := make([]interface{}, 0, maxParamsSQL)
+		valueArgs := make([]interface{}, 0, rowsPerInsert*numParams)
 
-		log.Printf("Bulk size %v\n", len(bulks[i]))
-
+		startOrdinalPosition := 1
 		for id, neighbors := range bulks[i] {
 			neighborsString := arrayToString(neighbors, ".") //normal delimiters cause problems with SQL
-			valueStrings = append(valueStrings, " (?, ?, ?) ")
+			valueStrings = append(valueStrings, GetParamPlaceHolders(startOrdinalPosition))
 			valueArgs = append(valueArgs, id)
 			valueArgs = append(valueArgs, util.HashId(uint64(id)))
 			valueArgs = append(valueArgs, neighborsString)
+			startOrdinalPosition += numParams
 		}
-		stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s",
+		stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s;",
 			tableName, params, strings.Join(valueStrings, ","))
 		_, err := db.Exec(stmt, valueArgs...)
 		if err != nil {
@@ -212,6 +212,13 @@ func BulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) e
 		log.Printf("Successfully inserted (%d/%d) time elapsed %v\n", i, N, time.Since(startTime))
 	}
 	return nil
+}
+
+func GetParamPlaceHolders(startOrdinalPosition int) string {
+	return fmt.Sprintf("(@p%d, @p%d, @p%d)",
+		startOrdinalPosition,
+		startOrdinalPosition+1,
+		startOrdinalPosition+2)
 }
 
 func getBulks(total map[uint32][]uint32, n int, rowsPerBulk int) []map[uint32][]uint32 {
