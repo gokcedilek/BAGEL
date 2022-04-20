@@ -1,6 +1,6 @@
 .PHONY: all clean test test-worker
 
-all: worker coord client db
+all: worker coord client db cnf
 
 worker:
 	go build -o bin/worker ./cmd/worker
@@ -13,6 +13,9 @@ client:
 
 db:
 	go build -o bin/database ./cmd/database
+
+cnf:
+	go build -o bin/cnf ./cmd/config
 
 clean:
 	rm -f bin/*
