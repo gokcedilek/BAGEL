@@ -28,6 +28,7 @@ type StartSuperStep struct {
 type ProgressSuperStep struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
+	IsRestart    bool
 }
 
 type ProgressSuperStepResult struct {
@@ -40,6 +41,8 @@ type ProgressSuperStepResult struct {
 type RestartSuperStep struct {
 	SuperStepNumber uint64
 	WorkerDirectory WorkerDirectory
+	NumWorkers      uint8
+	Query           Query
 }
 
 type CheckpointMsg struct {

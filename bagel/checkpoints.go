@@ -11,12 +11,15 @@ import (
 )
 
 type Checkpoint struct {
-	SuperStepNumber uint64
-	CheckpointState map[uint64]VertexCheckpoint
+	SuperStepNumber    uint64
+	CheckpointState    map[uint64]VertexCheckpoint
+	NextSuperStepState *SuperStep
 }
 
 func (w *Worker) getConnection() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", fmt.Sprintf("checkpoints%v.db", w.config.WorkerId))
+	db, err := sql.Open(
+		"sqlite3", fmt.Sprintf("checkpoints%v.db", w.config.WorkerId),
+	)
 	if err != nil {
 		log.Printf("getConnection database error: %v\n", err)
 		return nil, err
@@ -36,7 +39,8 @@ func (w *Worker) initializeCheckpoints() error {
 	const createCheckpoints string = `
 	  CREATE TABLE IF NOT EXISTS checkpoints (
 	  lastCheckpointNumber INTEGER NOT NULL PRIMARY KEY, 
-	  checkpointState BLOB NOT NULL
+	  checkpointState BLOB NOT NULL,
+	  nextSuperStepState BLOB NOT NULL
 	  );`
 
 	if _, err := db.Exec(createCheckpoints); err != nil {
@@ -57,16 +61,13 @@ func (w *Worker) checkpoint(superStepNum uint64) Checkpoint {
 	checkPointState := make(map[uint64]VertexCheckpoint)
 
 	for k, v := range w.Vertices {
-		checkPointState[k] = VertexCheckpoint{
-			CurrentValue: v.currentValue,
-			Messages:     v.messages,
-			IsActive:     v.isActive,
-		}
+		checkPointState[k] = VertexCheckpoint(*v)
 	}
 
 	return Checkpoint{
-		SuperStepNumber: superStepNum,
-		CheckpointState: checkPointState,
+		SuperStepNumber:    superStepNum,
+		CheckpointState:    checkPointState,
+		NextSuperStepState: w.NextSuperStep,
 	}
 }
 
@@ -82,10 +83,16 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		log.Printf("storeCheckpoint: encode error: %v\n", err)
 	}
 
+	var buf2 bytes.Buffer
+	if err = gob.NewEncoder(&buf2).Encode(checkpoint.NextSuperStepState); err != nil {
+		log.Printf("storeCheckpoint: encode error: %v\n", err)
+	}
+
 	_, err = db.Exec(
-		"INSERT INTO checkpoints VALUES(?,?)",
+		"INSERT INTO checkpoints VALUES(?,?,?)",
 		checkpoint.SuperStepNumber,
 		buf.Bytes(),
+		buf2.Bytes(),
 	)
 	if err != nil {
 		log.Printf("storeCheckpoint: error inserting into db: %v\n", err)
@@ -93,9 +100,10 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
-	log.Println(err)
-	util.CheckErr(err,
-		"worker %v could not dial coord addr %v\n", w.config.WorkerAddr, w.config.CoordAddr,
+	util.CheckErr(
+		err,
+		"worker %v could not dial coord addr %v\n", w.config.WorkerAddr,
+		w.config.CoordAddr,
 	)
 
 	checkpointMsg := CheckpointMsg{
@@ -104,10 +112,15 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 
 	var reply CheckpointMsg
-	log.Printf("storeCheckpoints: calling coord with checkpointMsg: %v\n", checkpointMsg)
+	log.Printf(
+		"storeCheckpoints: calling coord with checkpointMsg: %v\n",
+		checkpointMsg,
+	)
 	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
-	util.CheckErr(err,
-		"storeCheckpoints: worker %v could not call UpdateCheckpoint", w.config.WorkerAddr,
+	util.CheckErr(
+		err,
+		"storeCheckpoints: worker %v could not call UpdateCheckpoint",
+		w.config.WorkerAddr,
 	)
 
 	return checkpoint, nil
@@ -123,12 +136,14 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	defer db.Close()
 
 	res := db.QueryRow(
-		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?", superStepNumber,
+		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?",
+		superStepNumber,
 	)
 	checkpoint := Checkpoint{}
 	var buf []byte
+	var buf2 []byte
 	if err := res.Scan(
-		&checkpoint.SuperStepNumber, &buf,
+		&checkpoint.SuperStepNumber, &buf, &buf2,
 	); err == sql.ErrNoRows {
 		log.Printf("retrieveCheckpoint: scan error: %v\n", err)
 		return Checkpoint{}, err
@@ -137,15 +152,24 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	var checkpointState map[uint64]VertexCheckpoint
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
-		log.Printf("retrieveCheckpoint: decode error: %v, tmp: %v\n", err, checkpointState)
+		log.Printf(
+			"retrieveCheckpoint: decode error: %v, tmp: %v\n", err,
+			checkpointState,
+		)
 		return Checkpoint{}, err
 	}
 	checkpoint.CheckpointState = checkpointState
 
-	log.Printf(
-		"retrieveCheckpoint: read ssn: %v, state: %v\n", checkpoint.SuperStepNumber,
-		checkpoint.CheckpointState,
-	)
+	var nextSuperStepState *SuperStep
+	err = gob.NewDecoder(bytes.NewBuffer(buf2)).Decode(&nextSuperStepState)
+	if err != nil {
+		log.Printf(
+			"retrieveCheckpoint: decode error: %v, tmp: %v\n", err,
+			checkpointState,
+		)
+		return Checkpoint{}, err
+	}
+	checkpoint.NextSuperStepState = nextSuperStepState
 
 	return checkpoint, nil
 }

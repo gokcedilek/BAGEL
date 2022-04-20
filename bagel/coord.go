@@ -36,13 +36,14 @@ type Coord struct {
 	workerDoneRestart     chan *rpc.Call // done messages for Worker.RevertToLastCheckpoint RPC
 	allWorkersReady       chan superstepDone
 	restartSuperStepCh    chan bool
+	query                 Query
 }
 
-// todo: use in allWorkersReady channel (rather than just bool)?
 type superstepDone struct {
 	allWorkersInactive bool
 	isSuccess          bool
 	value              interface{}
+	isRestart          bool
 }
 
 func NewCoord() *Coord {
@@ -87,7 +88,9 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	}
 
 	// create new map of checkpoints for a new query which may have different number of workers
+	c.lastCheckpointNumber = 0
 	c.lastWorkerCheckpoints = make(map[uint32]uint64)
+	c.superStepNumber = 1
 
 	startSuperStep := StartSuperStep{
 		NumWorkers:      uint8(len(c.queryWorkers)),
@@ -100,6 +103,8 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
 	c.allWorkersReady = make(chan superstepDone, 1)
+
+	c.query = q
 
 	log.Printf(
 		"StartQuery: computing query %v with %d workers ready!\n", q,
@@ -125,6 +130,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	reply.Result = result
 
 	c.queryWorkers = nil
+	c.query = Query{}
 
 	// return nil for no errors
 	return nil
@@ -135,6 +141,7 @@ func (c *Coord) blockWorkersReady(
 ) {
 	readyWorkerCounter := 0
 	inactiveWorkerCounter := 0
+	var computeResult interface{} // result from a single superstep
 
 	for {
 		select {
@@ -154,33 +161,53 @@ func (c *Coord) blockWorkersReady(
 					call.ServiceMethod, call.Error,
 				)
 			} else {
-				var queryResult interface{}
 
 				if ssComplete, ok := call.Reply.(*ProgressSuperStepResult); ok {
 					if !ssComplete.IsActive {
 						inactiveWorkerCounter++
-						log.Printf("Worker reported as being active = %v\n", ssComplete.IsActive)
+						log.Printf(
+							"Worker reported as being active = %v\n",
+							ssComplete.IsActive,
+						)
 					}
-					// set the value from the worker that has the target vertex
-					queryResult = ssComplete.CurrentValue
-					log.Printf("current query value: %v\n", queryResult)
-					log.Printf("ss complete: %v\n", ssComplete)
+					// set the value returned from the worker
+					if ssComplete.CurrentValue != nil {
+						computeResult = ssComplete.CurrentValue
+					}
+					log.Printf(
+						"blockWorkersReady - current query value: %v\n",
+						computeResult,
+					)
 				}
 
 				readyWorkerCounter++
 				isComputeComplete := inactiveWorkerCounter == numWorkers
 
-				log.Printf("blockWorkersReady - %v: %d workers ready! %d workers inactive!\n",
+				isRestart := false
+
+				// set isRestart to true if this is a recovery superstep
+				if _, ok := call.Reply.(*RestartSuperStep); ok {
+					isRestart = true
+				}
+
+				log.Printf(
+					"blockWorkersReady - %v: %d workers ready! %d workers inactive!\n",
 					call.ServiceMethod,
 					readyWorkerCounter,
-					inactiveWorkerCounter)
+					inactiveWorkerCounter,
+				)
 
 				if readyWorkerCounter == numWorkers {
 					c.allWorkersReady <- superstepDone{
 						allWorkersInactive: isComputeComplete,
 						isSuccess:          true,
-						value:              queryResult,
+						value:              computeResult,
+						isRestart:          isRestart,
 					}
+					log.Printf(
+						"blockWorkersReady - sending query value: %v\n",
+						computeResult,
+					)
 					readyWorkerCounter = 0
 					inactiveWorkerCounter = 0
 					return
@@ -223,23 +250,19 @@ func (c *Coord) Compute() (interface{}, error) {
 
 	for {
 		select {
-		case notify := <-c.restartSuperStepCh:
-			log.Printf("worker failed: %v\n", notify)
+		case <-c.restartSuperStepCh:
 			c.restartCheckpoint()
 			c.blockWorkersReady(numWorkers, c.workerDoneRestart)
 		case result := <-c.allWorkersReady:
-
 			log.Printf(
-				"Coord: Compute: received all %d workers - compute is complete!\n",
-				numWorkers,
-			)
-
-			log.Printf(
-				"Coord-running compute with superstep: %v\n", c.superStepNumber,
+				"Coord-running compute with superstep: %v, isrestart: %v\n",
+				c.superStepNumber, result.isRestart,
 			)
 
 			if result.allWorkersInactive {
-				log.Printf("Computation is complete!")
+				log.Printf(
+					"Computation is complete with result %v\n!", result.value,
+				)
 				return result.value, nil
 			}
 
@@ -248,8 +271,8 @@ func (c *Coord) Compute() (interface{}, error) {
 			progressSuperStep := ProgressSuperStep{
 				SuperStepNum: c.superStepNumber,
 				IsCheckpoint: shouldCheckPoint,
+				IsRestart:    result.isRestart, // TODO
 			}
-			log.Println("Coord - calling checkWorkersReady from Compute!")
 			log.Printf(
 				"Coord: Compute: progressing super step # %d, should checkpoint %v \n",
 				c.superStepNumber, shouldCheckPoint,
@@ -276,9 +299,10 @@ func (c *Coord) restartCheckpoint() {
 	checkpointNumber := c.lastCheckpointNumber
 	numWorkers := len(c.queryWorkers)
 
-	restartSuperStep := RestartSuperStep{SuperStepNumber: checkpointNumber}
-
-	log.Println("Coord - calling checkWorkersReady from restartCheckpoint!")
+	restartSuperStep := RestartSuperStep{
+		SuperStepNumber: checkpointNumber, NumWorkers: uint8(numWorkers),
+		Query: c.query,
+	}
 
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
 	for wId, wClient := range c.queryWorkers {
@@ -289,7 +313,8 @@ func (c *Coord) restartCheckpoint() {
 			c.workerDoneRestart,
 		)
 	}
-	c.superStepNumber = checkpointNumber + 1
+	c.superStepNumber = checkpointNumber
+	//c.superStepNumber = checkpointNumber + 1
 }
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
@@ -326,6 +351,8 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		restartSuperStep := RestartSuperStep{
 			SuperStepNumber: checkpointNumber,
 			WorkerDirectory: c.queryWorkersDirectory,
+			NumWorkers:      uint8(len(c.queryWorkers)),
+			Query:           c.query,
 		}
 
 		var result RestartSuperStep
@@ -404,7 +431,9 @@ func (c *Coord) monitor(w WorkerNode) {
 		select {
 		case notify := <-notifyCh:
 			log.Printf("monitor: worker %v failed: %s\n", w.WorkerId, notify)
-			c.restartSuperStepCh <- true
+			if len(c.queryWorkers) > 0 {
+				c.restartSuperStepCh <- true
+			}
 		}
 	}
 }
