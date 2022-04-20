@@ -271,6 +271,10 @@ func (w *Worker) Start() error {
 		w.config.WorkerAddr, w.config.CoordAddr,
 	)
 
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	util.CheckErr(
 		err,
 		"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,

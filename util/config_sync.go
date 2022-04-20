@@ -2,8 +2,11 @@ package util
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 /*
@@ -34,8 +37,11 @@ type ClientConfig struct {
 }
 
 const (
-	WORKERS = "worker"
-	CLIENT  = "client"
+	WORKERS    = "worker"
+	CLIENT     = "client"
+	COORD      = "coord"
+	PORT_START = 49152
+	PORT_END   = 65535
 )
 
 func SynchronizeConfigs() error {
@@ -45,7 +51,7 @@ func SynchronizeConfigs() error {
 	}
 
 	var coord CoordConfig
-	err = ReadJSONConfig(GetConfigPath("coord_config.json"), &coord)
+	err = ReadJSONConfig(getConfigPath("coord_config.json"), &coord)
 	if err != nil {
 		return err
 	}
@@ -53,20 +59,20 @@ func SynchronizeConfigs() error {
 	for _, file := range files {
 		filename := file.Name()
 
-		if IsClientConfig(filename) {
+		if isConfigType(filename, CLIENT) {
 			var client ClientConfig
-			err = ReadJSONConfig(GetConfigPath(filename), &client)
+			err = ReadJSONConfig(getConfigPath(filename), &client)
 			client.CoordAddr = coord.ClientAPIListenAddr
-			err := WriteJSONConfig(GetConfigPath(filename), client)
+			err := WriteJSONConfig(getConfigPath(filename), client)
 			if err != nil {
 				return err
 			}
 		}
-		if IsWorkerConfig(filename) {
+		if isConfigType(filename, WORKERS) {
 			var worker WorkerConfig
-			err = ReadJSONConfig(GetConfigPath(filename), &worker)
+			err = ReadJSONConfig(getConfigPath(filename), &worker)
 			worker.CoordAddr = coord.WorkerAPIListenAddr
-			err := WriteJSONConfig(GetConfigPath(filename), worker)
+			err := WriteJSONConfig(getConfigPath(filename), worker)
 			if err != nil {
 				return err
 			}
@@ -75,18 +81,115 @@ func SynchronizeConfigs() error {
 	return nil
 }
 
-func AssignWorkerIPPorts() error {
+func AssignPorts() error {
+	portsAssigned := make(map[int]bool)
+
+	files, err := os.ReadDir("config")
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		filename := file.Name()
+
+		if isConfigType(filename, COORD) {
+			err = reassignCoordPorts(filename, &portsAssigned)
+		}
+
+		if isConfigType(filename, CLIENT) {
+			err = reassignClientPorts(filename, &portsAssigned)
+		}
+
+		if isConfigType(filename, WORKERS) {
+			err = reassignWorkerPorts(filename, &portsAssigned)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func IsClientConfig(filename string) bool {
-	return strings.HasPrefix(filename, CLIENT)
+func SetPort(ipPort string, port int) string {
+	ip_port := strings.Split(ipPort, ":")
+	ip_port[1] = strconv.Itoa(port)
+	return strings.Join(ip_port, ":")
 }
 
-func IsWorkerConfig(filename string) bool {
-	return strings.HasPrefix(filename, WORKERS)
+func isConfigType(filename string, configType string) bool {
+	return strings.HasPrefix(filename, configType)
 }
 
-func GetConfigPath(filename string) string {
+func getConfigPath(filename string) string {
 	return fmt.Sprintf("config/%s", filename)
+}
+
+func getUnassignedPortNumber(assignedPorts map[int]bool) int {
+	for {
+		port := getRandomPortNumber()
+		if _, exists := assignedPorts[port]; !exists {
+			assignedPorts[port] = true
+			fmt.Println("found port = ", port, assignedPorts)
+			return port
+		}
+	}
+}
+
+func getRandomPortNumber() int {
+	rand.Seed(time.Now().Unix())
+	return rand.Intn(PORT_END-PORT_START) + PORT_START
+}
+
+func reassignCoordPorts(filename string, assignedPorts *map[int]bool) error {
+	var coord CoordConfig
+	err := ReadJSONConfig(getConfigPath(filename), &coord)
+
+	if err != nil {
+		return err
+	}
+
+	port := getUnassignedPortNumber(*assignedPorts)
+	coord.ClientAPIListenAddr = SetPort(coord.ClientAPIListenAddr, port)
+	port = getUnassignedPortNumber(*assignedPorts)
+	coord.WorkerAPIListenAddr = SetPort(coord.WorkerAPIListenAddr, port)
+
+	err = WriteJSONConfig(getConfigPath(filename), coord)
+	if err != nil {
+		return err
+	}
+	return SynchronizeConfigs()
+}
+
+func reassignClientPorts(filename string, assignedPorts *map[int]bool) error {
+	var client ClientConfig
+	err := ReadJSONConfig(getConfigPath(filename), &client)
+
+	if err != nil {
+		return err
+	}
+
+	port := getUnassignedPortNumber(*assignedPorts)
+	client.ClientAddr = SetPort(client.ClientAddr, port)
+	return WriteJSONConfig(getConfigPath(filename), client)
+}
+
+func reassignWorkerPorts(filename string, assignedPorts *map[int]bool) error {
+
+	fmt.Printf("Reassigning ports for worker %s\n", filename)
+
+	var worker WorkerConfig
+	err := ReadJSONConfig(getConfigPath(filename), &worker)
+
+	if err != nil {
+		return err
+	}
+
+	port := getUnassignedPortNumber(*assignedPorts)
+	worker.WorkerAddr = SetPort(worker.WorkerAddr, port)
+	port = getUnassignedPortNumber(*assignedPorts)
+	worker.WorkerListenAddr = SetPort(worker.WorkerListenAddr, port)
+	port = getUnassignedPortNumber(*assignedPorts)
+	worker.FCheckAckLocalAddress = SetPort(worker.FCheckAckLocalAddress, port)
+	return WriteJSONConfig(getConfigPath(filename), worker)
 }
