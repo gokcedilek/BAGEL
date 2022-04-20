@@ -22,6 +22,14 @@ func ReadJSONConfig(filename string, config interface{}) error {
 	return nil
 }
 
+func WriteJSONConfig(filename string, config interface{}) error {
+	data, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename, data, 0666)
+}
+
 func CheckErr(err error, errfmsg string, fargs ...interface{}) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, errfmsg, fargs...)
@@ -47,7 +55,6 @@ func DialTCPCustom(localAddr string, remoteAddr string) (*net.TCPConn, error) {
 		return nil, err
 	}
 
-	// TODO !!! remove for final submission
 	err = conn.SetLinger(0)
 	return conn, err
 }
