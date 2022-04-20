@@ -37,6 +37,7 @@ type Coord struct {
 	allWorkersReady       chan superstepDone
 	restartSuperStepCh    chan bool
 	query                 Query
+	mx                    sync.Mutex
 }
 
 type superstepDone struct {
@@ -217,11 +218,12 @@ func (c *Coord) blockWorkersReady(
 	}
 }
 
-// TODO: test this!
 func (c *Coord) UpdateCheckpoint(
 	msg CheckpointMsg, reply *CheckpointMsg,
 ) error {
 	// save the last SuperStep # checkpointed by this worker
+	c.mx.Lock()
+	defer c.mx.Unlock()
 	c.lastWorkerCheckpoints[msg.WorkerId] = msg.SuperStepNumber
 
 	// update global SuperStep # if needed
@@ -290,8 +292,6 @@ func (c *Coord) Compute() (interface{}, error) {
 			c.superStepNumber += 1
 		}
 	}
-	log.Printf("Compute: Query complete, value found\n")
-	return -1, nil
 }
 
 func (c *Coord) restartCheckpoint() {
