@@ -19,7 +19,6 @@ type Vertex struct {
 	currentValue   interface{}
 	messages       []Message
 	isActive       bool
-	SuperStep      uint64
 }
 
 type VertexCheckpoint struct {
@@ -35,7 +34,6 @@ func NewVertex(id uint64, neighbors []uint64) *Vertex {
 		previousValues: make(map[uint64]interface{}),
 		messages:       make([]Message, 0),
 		isActive:       false,
-		SuperStep:      0,
 	}
 }
 
@@ -51,8 +49,7 @@ func NewShortestPathVertex(id uint64, neighbors []uint64, value int) *Vertex {
 	return spVertex
 }
 
-func (v *Vertex) SetSuperStepInfo(superStepNum uint64, messages []Message) {
-	v.SuperStep = superStepNum
+func (v *Vertex) SetSuperStepInfo(messages []Message) {
 	v.messages = messages
 }
 
@@ -83,7 +80,6 @@ func (v *Vertex) ComputeShortestPath() []Message {
 		v.currentValue = shortestNewPath
 		for _, neighborVertexId := range v.neighbors {
 			newMessage := Message{
-				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
 				DestVertexId:   neighborVertexId,
 				Value:          shortestNewPath + 1,
@@ -117,7 +113,6 @@ func (v *Vertex) ComputePageRank() []Message {
 	if math.Abs(totalFlow-v.currentValue.(float64)) > EPSILON {
 		for _, neighborVertexId := range v.neighbors {
 			newMessage := Message{
-				SuperStepNum:   v.SuperStep,
 				SourceVertexId: v.Id,
 				DestVertexId:   neighborVertexId,
 				Value:          totalFlow / float64(len(v.neighbors)),

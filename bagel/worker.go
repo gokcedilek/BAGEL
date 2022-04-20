@@ -18,7 +18,6 @@ import (
 // Message represents an arbitrary message sent during calculation
 // value has a dynamic type based on the messageType
 type Message struct {
-	SuperStepNum   uint64
 	SourceVertexId uint64
 	DestVertexId   uint64
 	Value          interface{}
@@ -47,7 +46,6 @@ type Worker struct {
 }
 
 type SuperStep struct {
-	Id           uint64
 	Messages     map[uint64][]Message
 	Outgoing     map[uint32][]Message
 	IsCheckpoint bool
@@ -60,8 +58,8 @@ type BatchedMessages struct {
 func NewWorker(config WorkerConfig) *Worker {
 	return &Worker{
 		config:         config,
-		SuperStep:      NewSuperStep(0),
-		NextSuperStep:  NewSuperStep(1),
+		SuperStep:      NewSuperStep(),
+		NextSuperStep:  NewSuperStep(),
 		Vertices:       make(map[uint64]*Vertex),
 		workerCallBook: make(WorkerCallBook),
 	}
@@ -86,9 +84,8 @@ func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
 	return addr
 }
 
-func NewSuperStep(number uint64) *SuperStep {
+func NewSuperStep() *SuperStep {
 	return &SuperStep{
-		Id:           number,
 		Messages:     make(map[uint64][]Message),
 		Outgoing:     make(map[uint32][]Message),
 		IsCheckpoint: false,
@@ -125,12 +122,12 @@ func (w *Worker) StartQuery(
 		if w.Query.QueryType == SHORTEST_PATH {
 			pianoVertex = *NewShortestPathVertex(v.VertexID, v.Neighbors, math.MaxInt32)
 			if IsTargetVertex(v.VertexID, w.Query.Nodes, SHORTEST_PATH_SOURCE) {
-				initialMessage := Message{0, INITIALIZATION_VERTEX, v.VertexID, 0}
+				initialMessage := Message{INITIALIZATION_VERTEX, v.VertexID, 0}
 				w.NextSuperStep.Messages[v.VertexID] = append(w.NextSuperStep.Messages[v.VertexID], initialMessage)
 			}
 		} else {
 			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
-			initialMessage := Message{0, INITIALIZATION_VERTEX, v.VertexID, 0.85}
+			initialMessage := Message{INITIALIZATION_VERTEX, v.VertexID, 0.85}
 			w.NextSuperStep.Messages[v.VertexID] = append(w.NextSuperStep.Messages[v.VertexID], initialMessage)
 		}
 		w.Vertices[v.VertexID] = &pianoVertex
@@ -157,7 +154,6 @@ func (w *Worker) RevertToLastCheckpoint(
 	}
 	log.Printf("RevertToLastCheckpoint: retrieved checkpoint: %v\n", checkpoint)
 
-	w.SuperStep.Id = checkpoint.SuperStepNumber
 	for k, v := range w.Vertices {
 		if state, found := checkpoint.CheckpointState[v.Id]; found {
 			log.Printf("RevertToLastCheckpoint: found state: %v\n", state)
@@ -284,7 +280,7 @@ func (w *Worker) ComputeVertices(args *ProgressSuperStep, resp *ProgressSuperSte
 
 	hasActiveVertex := false
 	for _, vertex := range w.Vertices {
-		vertex.SetSuperStepInfo(args.SuperStepNum, w.SuperStep.Messages[vertex.Id])
+		vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
 		if len(vertex.messages) > 0 {
 			messages := vertex.Compute(w.Query.QueryType)
 			w.mapMessagesToWorkers(messages)
@@ -305,12 +301,12 @@ func (w *Worker) ComputeVertices(args *ProgressSuperStep, resp *ProgressSuperSte
 	}
 
 	if args.IsCheckpoint {
-		checkpoint := w.checkpoint()
+		checkpoint := w.checkpoint(args.SuperStepNum)
 		_, err := w.storeCheckpoint(checkpoint)
 		util.CheckErr(
 			err,
 			"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
-			w.SuperStep.Id,
+			args.SuperStepNum,
 		)
 	}
 
@@ -354,11 +350,11 @@ func (w *Worker) ComputeVertices(args *ProgressSuperStep, resp *ProgressSuperSte
 		)
 	}
 
-	resp.SuperStepNum = w.SuperStep.Id
+	resp.SuperStepNum = args.SuperStepNum
 	resp.IsCheckpoint = args.IsCheckpoint
-	resp.IsActive = hasActiveVertex && w.SuperStep.Id < MAX_ITERATIONS
+	resp.IsActive = hasActiveVertex && args.SuperStepNum < MAX_ITERATIONS
 
-	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", w.SuperStep.Id, resp.IsActive, resp)
+	log.Printf("Should notify Coord active for ssn %d = %v, %v\n", args.SuperStepNum, resp.IsActive, resp)
 
 	return nil
 }
@@ -377,12 +373,12 @@ func (w *Worker) PutBatchedMessages(batch BatchedMessages, resp *Message) error 
 
 func (w *Worker) switchToNextSuperStep() error {
 	log.Printf(
-		"switchToNextSuperStep: Worker %v transitioning from SuperStep # %d to SuperStep # %d\n",
-		w.config.WorkerId, w.SuperStep.Id, w.NextSuperStep.Id,
+		"switchToNextSuperStep: Worker %v progressing to next superstep\n",
+		w.config.WorkerId,
 	)
 
 	w.SuperStep = w.NextSuperStep
-	w.NextSuperStep = NewSuperStep(w.SuperStep.Id + 1)
+	w.NextSuperStep = NewSuperStep()
 	return nil
 }
 
