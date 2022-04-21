@@ -112,6 +112,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
 	c.allWorkersReady = make(chan superstepDone, 1)
+	c.restartSuperStepCh = make(chan uint32, numWorkers)
 
 	c.query = q
 
@@ -442,6 +443,7 @@ func (c *Coord) monitor(w WorkerNode) {
 			log.Printf("monitor: worker %v failed: %s\n", w.WorkerId, notify)
 			if len(c.queryWorkers) > 0 {
 				c.restartSuperStepCh <- w.WorkerId
+				return
 			}
 		}
 	}
@@ -479,7 +481,6 @@ func (c *Coord) Start(
 	c.clientAPIListenAddr = clientAPIListenAddr
 	c.workerAPIListenAddr = workerAPIListenAddr
 	c.lostMsgsThresh = lostMsgsThresh
-	c.restartSuperStepCh = make(chan uint32, 1)
 	c.checkpointFrequency = checkpointSteps
 
 	err := rpc.Register(c)
