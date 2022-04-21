@@ -1,7 +1,1 @@
-{
-  "WorkerId": 3,
-  "CoordAddr": ":55557",
-  "WorkerAddr": ":44444",
-  "WorkerListenAddr": ":44442",
-  "FCheckAckLocalAddress": ":54348"
-}
+{"WorkerId":3,"CoordAddr":"20.83.241.160:59141","WorkerAddr":"20.69.158.88:58828","WorkerListenAddr":"20.69.158.88:58720","FCheckAckLocalAddress":"20.69.158.88:53057"}
