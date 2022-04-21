@@ -105,6 +105,8 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 	if err != nil {
 		panic("getVerticesModulo failed")
 	}
+
+	w.workerMutex.Lock()
 	w.SuperStep = NewSuperStep()
 	w.NextSuperStep = NewSuperStep()
 
@@ -129,6 +131,8 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 		}
 		w.Vertices[v.VertexID] = &pianoVertex
 	}
+	w.workerMutex.Unlock()
+
 	log.Printf("total # vertices belonging to worker: %v\n", len(w.Vertices))
 }
 
@@ -209,11 +213,13 @@ func (w *Worker) RevertToLastCheckpoint(
 	}
 
 	// set superstep state
+	w.workerMutex.Lock()
 	w.NextSuperStep = &SuperStep{
 		Messages:     checkpoint.NextSuperStepState.Messages,
 		Outgoing:     checkpoint.NextSuperStepState.Outgoing,
 		IsCheckpoint: checkpoint.NextSuperStepState.IsCheckpoint,
 	}
+	w.workerMutex.Unlock()
 
 	*reply = req
 	return nil
@@ -445,8 +451,10 @@ func (w *Worker) switchToNextSuperStep() error {
 		w.config.WorkerId,
 	)
 
+	w.workerMutex.Lock()
 	w.SuperStep = w.NextSuperStep
 	w.NextSuperStep = NewSuperStep()
+	w.workerMutex.Unlock()
 	return nil
 }
 
