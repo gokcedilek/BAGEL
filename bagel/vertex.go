@@ -21,7 +21,14 @@ type Vertex struct {
 	IsActive       bool
 }
 
-type VertexCheckpoint Vertex
+// VertexCheckpoint stores Vertex information that needs to be restored upon
+// retrieving a checkpoint
+type VertexCheckpoint struct {
+	Id             uint64
+	Neighbors      []uint64
+	PreviousValues map[uint64]interface{}
+	CurrentValue   interface{}
+}
 
 func NewVertex(id uint64, neighbors []uint64) *Vertex {
 	return &Vertex{
@@ -49,19 +56,19 @@ func (v *Vertex) SetSuperStepInfo(messages []Message) {
 	v.Messages = messages
 }
 
-func (v *Vertex) Compute(queryType string, isRestart bool) []Message {
+func (v *Vertex) Compute(queryType string) []Message {
 	var result []Message
 	switch queryType {
 	case PAGE_RANK:
 		result = v.ComputePageRank()
 	case SHORTEST_PATH:
-		result = v.ComputeShortestPath(isRestart)
+		result = v.ComputeShortestPath()
 	}
 	v.IsActive = len(result) > 0
 	return result
 }
 
-func (v *Vertex) ComputeShortestPath(isRestart bool) []Message {
+func (v *Vertex) ComputeShortestPath() []Message {
 	result := make([]Message, 0)
 	shortestNewPath := math.MaxInt32
 	for _, message := range v.Messages {
@@ -72,8 +79,7 @@ func (v *Vertex) ComputeShortestPath(isRestart bool) []Message {
 		}
 	}
 
-	if (shortestNewPath < v.CurrentValue.(int)) || (isRestart && v.CurrentValue.(int) < math.MaxInt32) {
-		// if (shortestNewPath < v.CurrentValue.(int)) {
+	if shortestNewPath < v.CurrentValue.(int) {
 		v.CurrentValue = shortestNewPath
 		for _, neighborVertexId := range v.Neighbors {
 			newMessage := Message{
