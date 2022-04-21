@@ -1,6 +1,6 @@
 {
   "ClientId": "client1",
-  "CoordAddr": "anvil.students.cs.ubc.ca:54421",
-  "ClientAddr": "thetis.students.cs.ubc.ca:34221",
-  "ClientCoordAddr": "thetis.students.cs.ubc.ca:55441"
+  "CoordAddr": ":54421",
+  "ClientAddr": ":34221",
+  "ClientCoordAddr": ":55441"
 }
