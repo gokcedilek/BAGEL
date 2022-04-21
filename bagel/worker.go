@@ -25,11 +25,14 @@ type Message struct {
 }
 
 type WorkerConfig struct {
-	WorkerId              uint32
-	CoordAddr             string
-	WorkerAddr            string
-	WorkerListenAddr      string
-	FCheckAckLocalAddress string
+	WorkerId                   uint32
+	CoordAddr                  string
+	WorkerAddr                 string
+	WorkerListenAddr           string
+	FCheckAckLocalAddress      string
+	LocalWorkerAddr            string
+	LocalWorkerListAddr        string
+	LocalFCheckAckLocalAddress string
 }
 
 type Worker struct {
@@ -57,6 +60,11 @@ type BatchedMessages struct {
 }
 
 func NewWorker(config WorkerConfig) *Worker {
+
+	config.LocalWorkerListAddr = util.IPEmptyPortOnly(config.WorkerListenAddr)
+	config.LocalWorkerAddr = util.IPEmptyPortOnly(config.WorkerAddr)
+	config.LocalFCheckAckLocalAddress = util.IPEmptyPortOnly(config.FCheckAckLocalAddress)
+
 	return &Worker{
 		config:          config,
 		SuperStep:       NewSuperStep(),
@@ -268,7 +276,7 @@ func (w *Worker) Start() error {
 
 	// connect to the coord node
 	conn, err := util.DialTCPCustom(
-		w.config.WorkerAddr, w.config.CoordAddr,
+		w.config.LocalWorkerAddr, w.config.CoordAddr,
 	)
 
 	if err != nil {
@@ -285,7 +293,7 @@ func (w *Worker) Start() error {
 	coordClient := rpc.NewClient(conn)
 
 	hBeatAddr := w.startFCheckHBeat(
-		w.config.WorkerId, w.config.FCheckAckLocalAddress,
+		w.config.WorkerId, w.config.LocalFCheckAckLocalAddress,
 	)
 	log.Printf(
 		"Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr,
@@ -293,7 +301,7 @@ func (w *Worker) Start() error {
 
 	workerNode := WorkerNode{
 		w.config.WorkerId, w.config.WorkerAddr,
-		hBeatAddr, w.config.WorkerListenAddr,
+		w.config.FCheckAckLocalAddress, w.config.WorkerListenAddr,
 	}
 
 	var response WorkerNode
