@@ -459,6 +459,7 @@ func (w *Worker) switchToNextSuperStep() error {
 }
 
 func (w *Worker) mapMessagesToWorkers(msgs []Message) {
+	w.workerMutex.Lock()
 	for _, msg := range msgs {
 		destWorker := util.GetFlooredModulo(
 			util.HashId(msg.DestVertexId), int64(w.NumWorkers),
@@ -467,6 +468,7 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 			w.SuperStep.Outgoing[uint32(destWorker)], msg,
 		)
 	}
+	w.workerMutex.Unlock()
 }
 
 func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
