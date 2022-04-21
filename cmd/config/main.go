@@ -7,9 +7,9 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Println("usage: ./bin/config [sync|port]")
-		fmt.Println("example ./bin/config sync")
+	if len(os.Args) < 2 {
+		fmt.Println("usage: ./bin/cnf [sync|port|azure]")
+		fmt.Println("example ./bin/cnf sync")
 		return
 	}
 
@@ -23,9 +23,15 @@ func main() {
 		if err != nil {
 			fmt.Println("Failed to assign port numbers to workers", err)
 		}
+	} else if os.Args[1] == "azure" && len(os.Args) == 4 {
+		err := util.AssignToRemote(os.Args[2], os.Args[3])
+		if err != nil {
+			fmt.Println("Failed to assign remote addresses - ", err)
+		}
 	} else {
-		fmt.Println("usage: ./bin/config [sync|port]")
-		fmt.Println("example ./bin/config sync")
+		fmt.Println("usage: ./bin/cnf [sync|port|azure] [coordRemoteServer] [clientRemoteServer]")
+		fmt.Println("example ./bin/cnf sync")
+		fmt.Println("example ./bin/cnf azure Lulu Anvil")
 	}
 
 }
