@@ -230,7 +230,7 @@ func (w *Worker) RevertToLastCheckpoint(
 }
 
 func (w *Worker) listenCoord(handler *rpc.Server) {
-	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.WorkerListenAddr)
+	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.LocalWorkerListAddr)
 	util.CheckErr(
 		err,
 		"Worker %v could not resolve WorkerListenAddr: %v", w.config.WorkerId,

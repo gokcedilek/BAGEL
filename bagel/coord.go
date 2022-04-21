@@ -17,8 +17,6 @@ type CoordConfig struct {
 	WorkerAPIListenAddr     string // new joining workers will message this addr
 	LostMsgsThresh          uint8  // fcheck
 	StepsBetweenCheckpoints uint64
-	LocalClientListenAddr   string
-	LocalWorkerListenAddr   string
 }
 
 type Coord struct {
