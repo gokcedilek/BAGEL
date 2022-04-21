@@ -1,8 +1,11 @@
 package util
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"math/rand"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -111,10 +114,96 @@ func AssignPorts() error {
 	return nil
 }
 
+func AssignToRemote(coordServer string, clientServer string) error {
+	var config map[string]interface{}
+	err := ReadJSONConfig("config/remote_configs.json", &config)
+	if err != nil {
+		return err
+	}
+
+	_, coordExists := config[coordServer]
+	_, clientExists := config[clientServer]
+
+	if !coordExists || !clientExists {
+		return errors.New(
+			fmt.Sprintf(
+				"invalid coordinator or client address supplied; available servers: %v\n",
+				getServerNames(config),
+			))
+	}
+
+	workerServers := getWorkerServers(coordServer, clientServer, config)
+	serverAssignments := make([]string, len(config))
+
+	files, err := os.ReadDir("config")
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		filename := file.Name()
+
+		if isConfigType(filename, COORD) {
+			err = reassignCoordHost(filename, "")
+			if err != nil {
+				return err
+			}
+			serverAssignments = append(serverAssignments,
+				getAzureServerAssignmentMsg(filename, coordServer, config[coordServer].(string)))
+		}
+
+		if isConfigType(filename, WORKERS) {
+			var serverName, serverAddr string
+			for name, addr := range workerServers {
+				serverName = name
+				serverAddr = addr
+				break
+			}
+			delete(workerServers, serverName)
+			if serverName == "" {
+				log.Printf("ReassignWorkerHost - ran out of available servers %s\n", filename)
+				log.Printf("Remote Server Assignments\n%v\n", serverAssignments)
+				return nil
+			}
+
+			err = reassignWorkerHosts(filename, serverAddr, config[coordServer].(string))
+			if err != nil {
+				return err
+			}
+			serverAssignments = append(serverAssignments,
+				getAzureServerAssignmentMsg(filename, serverName, serverAddr))
+		}
+
+		if isConfigType(filename, CLIENT) {
+			err = reassignClientHost(filename, config[clientServer].(string), config[coordServer].(string))
+			if err != nil {
+				return err
+			}
+			serverAssignments = append(serverAssignments,
+				getAzureServerAssignmentMsg(filename, clientServer, config[clientServer].(string)))
+		}
+	}
+
+	log.Printf("Remote Server Assignments\n%v\n", serverAssignments)
+	return nil
+}
+
+func getAzureServerAssignmentMsg(nodeType string, serverName string, serverAddr string) string {
+	return fmt.Sprintf("%s assigned to server %s : %s\n", nodeType, serverName, serverAddr)
+}
+
 func SetPort(ipPort string, port int) string {
 	ip_port := strings.Split(ipPort, ":")
 	ip_port[1] = strconv.Itoa(port)
 	return strings.Join(ip_port, ":")
+}
+
+func SetHost(hostport string, host string) string {
+	_, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		log.Fatalf("SetHost - failed to split host port %v\n", err)
+		return ""
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func isConfigType(filename string, configType string) bool {
@@ -134,6 +223,25 @@ func getUnassignedPortNumber(assignedPorts map[int]bool) int {
 			return port
 		}
 	}
+}
+
+func getWorkerServers(coordServer string, clientServer string, serverMap map[string]interface{}) map[string]string {
+	availableServers := make(map[string]string)
+	for server, address := range serverMap {
+		if server != coordServer && server != clientServer {
+			availableServers[server] = address.(string)
+		}
+	}
+	return availableServers
+}
+
+func getServerNames(remoteConfig map[string]interface{}) []string {
+	names := make([]string, len(remoteConfig))
+
+	for name := range remoteConfig {
+		names = append(names, name)
+	}
+	return names
 }
 
 func getRandomPortNumber() int {
@@ -191,5 +299,53 @@ func reassignWorkerPorts(filename string, assignedPorts *map[int]bool) error {
 	worker.WorkerListenAddr = SetPort(worker.WorkerListenAddr, port)
 	port = getUnassignedPortNumber(*assignedPorts)
 	worker.FCheckAckLocalAddress = SetPort(worker.FCheckAckLocalAddress, port)
+	return WriteJSONConfig(getConfigPath(filename), worker)
+}
+
+func reassignCoordHost(filename string, host string) error {
+	log.Printf("Reassigning host for coord %s to %s\n", filename, host)
+
+	var coord CoordConfig
+	err := ReadJSONConfig(getConfigPath(filename), &coord)
+
+	if err != nil {
+		return err
+	}
+
+	coord.ClientAPIListenAddr = SetHost(coord.ClientAPIListenAddr, "")
+	coord.WorkerAPIListenAddr = SetHost(coord.WorkerAPIListenAddr, "")
+	return WriteJSONConfig(getConfigPath(filename), coord)
+}
+
+func reassignClientHost(filename string, host string, coordHost string) error {
+	log.Printf("Reassigning host for client %s to %s\n", filename, host)
+
+	var client ClientConfig
+	err := ReadJSONConfig(getConfigPath(filename), &client)
+
+	if err != nil {
+		return err
+	}
+
+	client.ClientAddr = SetHost(client.ClientAddr, host)
+	client.CoordAddr = SetHost(client.CoordAddr, coordHost)
+
+	return WriteJSONConfig(getConfigPath(filename), client)
+}
+
+func reassignWorkerHosts(filename string, host string, coordHost string) error {
+	log.Printf("Reassigning host for worker %s to %s\n", filename, host)
+
+	var worker WorkerConfig
+	err := ReadJSONConfig(getConfigPath(filename), &worker)
+
+	if err != nil {
+		return err
+	}
+
+	worker.CoordAddr = SetHost(worker.CoordAddr, coordHost)
+	worker.WorkerAddr = SetHost(worker.WorkerAddr, host)
+	worker.WorkerListenAddr = SetHost(worker.WorkerListenAddr, host)
+	worker.FCheckAckLocalAddress = SetHost(worker.FCheckAckLocalAddress, host)
 	return WriteJSONConfig(getConfigPath(filename), worker)
 }
