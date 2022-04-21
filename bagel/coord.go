@@ -50,6 +50,7 @@ type superstepDone struct {
 }
 
 func NewCoord() *Coord {
+
 	return &Coord{
 		clientAPIListenAddr:   "",
 		workerAPIListenAddr:   "",

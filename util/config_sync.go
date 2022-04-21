@@ -192,9 +192,22 @@ func getAzureServerAssignmentMsg(nodeType string, serverName string, serverAddr 
 }
 
 func SetPort(ipPort string, port int) string {
-	ip_port := strings.Split(ipPort, ":")
-	ip_port[1] = strconv.Itoa(port)
-	return strings.Join(ip_port, ":")
+	host, _, err := net.SplitHostPort(ipPort)
+	if err != nil {
+		log.Fatalf("SetPort - Failed to separate host and port %v\n", err)
+		return ""
+	}
+
+	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+func IPEmptyPortOnly(hostport string) string {
+	_, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		log.Fatalf("IPEmptyPortOnly - Failed to separate host and port %v\\n", err)
+		return ""
+	}
+	return fmt.Sprintf(":%s", port)
 }
 
 func SetHost(hostport string, host string) string {

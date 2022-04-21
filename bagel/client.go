@@ -74,7 +74,8 @@ func (c *GraphClient) Start(
 
 	var err error
 	// connect to the coord node for RPCs
-	c.coordConn, err = util.DialTCPCustom(clientAddr, coordAddr)
+	lAddr := util.IPEmptyPortOnly(clientAddr)
+	c.coordConn, err = util.DialTCPCustom(lAddr, coordAddr)
 	if err != nil {
 		return nil, err
 	}
