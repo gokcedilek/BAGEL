@@ -205,8 +205,6 @@ func (w *Worker) RevertToLastCheckpoint(
 			Neighbors:      v.Neighbors,
 			PreviousValues: v.PreviousValues,
 			CurrentValue:   v.CurrentValue,
-			Messages:       v.Messages,
-			IsActive:       true,
 		}
 	}
 
@@ -341,26 +339,17 @@ func (w *Worker) ComputeVertices(
 		)
 	}
 
-	log.Printf(
-		"ComputeVertices - worker %v superstep %v, superstep msg length: %v, next superstep msg length: %v\n",
-		w.config.WorkerId, args.SuperStepNum, len(w.SuperStep.Messages),
-		len(w.NextSuperStep.Messages),
-	)
-
 	hasActiveVertex := false
 	for _, vertex := range w.Vertices {
 		vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
 		if len(vertex.Messages) > 0 {
-			messages := vertex.Compute(w.Query.QueryType, args.IsRestart)
+			messages := vertex.Compute(w.Query.QueryType)
 			w.mapMessagesToWorkers(messages)
 			if vertex.IsActive {
 				hasActiveVertex = true
 			}
 		}
 
-		// if args.IsRestart {
-		// 	log.Printf("ComputeVertices - vertex: %v, message length: %v\n", vertex.Id, len(vertex.Messages))
-		// }
 		vertexType := PAGE_RANK
 		if w.Query.QueryType == SHORTEST_PATH {
 			vertexType = SHORTEST_PATH_DEST

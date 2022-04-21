@@ -61,7 +61,12 @@ func (w *Worker) checkpoint(superStepNum uint64) Checkpoint {
 	checkPointState := make(map[uint64]VertexCheckpoint)
 
 	for k, v := range w.Vertices {
-		checkPointState[k] = VertexCheckpoint(*v)
+		checkPointState[k] = VertexCheckpoint{
+			Id:             v.Id,
+			Neighbors:      v.Neighbors,
+			PreviousValues: v.PreviousValues,
+			CurrentValue:   v.CurrentValue,
+		}
 	}
 
 	return Checkpoint{
