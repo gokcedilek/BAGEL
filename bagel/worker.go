@@ -113,6 +113,8 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 	if err != nil {
 		panic("getVerticesModulo failed")
 	}
+
+	w.workerMutex.Lock()
 	w.SuperStep = NewSuperStep()
 	w.NextSuperStep = NewSuperStep()
 
@@ -137,6 +139,8 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 		}
 		w.Vertices[v.VertexID] = &pianoVertex
 	}
+	w.workerMutex.Unlock()
+
 	log.Printf("total # vertices belonging to worker: %v\n", len(w.Vertices))
 }
 
@@ -213,17 +217,17 @@ func (w *Worker) RevertToLastCheckpoint(
 			Neighbors:      v.Neighbors,
 			PreviousValues: v.PreviousValues,
 			CurrentValue:   v.CurrentValue,
-			Messages:       v.Messages,
-			IsActive:       true,
 		}
 	}
 
 	// set superstep state
+	w.workerMutex.Lock()
 	w.NextSuperStep = &SuperStep{
 		Messages:     checkpoint.NextSuperStepState.Messages,
 		Outgoing:     checkpoint.NextSuperStepState.Outgoing,
 		IsCheckpoint: checkpoint.NextSuperStepState.IsCheckpoint,
 	}
+	w.workerMutex.Unlock()
 
 	*reply = req
 	return nil
@@ -349,26 +353,17 @@ func (w *Worker) ComputeVertices(
 		)
 	}
 
-	log.Printf(
-		"ComputeVertices - worker %v superstep %v, superstep msg length: %v, next superstep msg length: %v\n",
-		w.config.WorkerId, args.SuperStepNum, len(w.SuperStep.Messages),
-		len(w.NextSuperStep.Messages),
-	)
-
 	hasActiveVertex := false
 	for _, vertex := range w.Vertices {
 		vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
 		if len(vertex.Messages) > 0 {
-			messages := vertex.Compute(w.Query.QueryType, args.IsRestart)
+			messages := vertex.Compute(w.Query.QueryType)
 			w.mapMessagesToWorkers(messages)
 			if vertex.IsActive {
 				hasActiveVertex = true
 			}
 		}
 
-		// if args.IsRestart {
-		// 	log.Printf("ComputeVertices - vertex: %v, message length: %v\n", vertex.Id, len(vertex.Messages))
-		// }
 		vertexType := PAGE_RANK
 		if w.Query.QueryType == SHORTEST_PATH {
 			vertexType = SHORTEST_PATH_DEST
@@ -464,12 +459,15 @@ func (w *Worker) switchToNextSuperStep() error {
 		w.config.WorkerId,
 	)
 
+	w.workerMutex.Lock()
 	w.SuperStep = w.NextSuperStep
 	w.NextSuperStep = NewSuperStep()
+	w.workerMutex.Unlock()
 	return nil
 }
 
 func (w *Worker) mapMessagesToWorkers(msgs []Message) {
+	w.workerMutex.Lock()
 	for _, msg := range msgs {
 		destWorker := util.GetFlooredModulo(
 			util.HashId(msg.DestVertexId), int64(w.NumWorkers),
@@ -478,6 +476,7 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 			w.SuperStep.Outgoing[uint32(destWorker)], msg,
 		)
 	}
+	w.workerMutex.Unlock()
 }
 
 func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
