@@ -130,6 +130,8 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 		)
 	}
 
+	go c.blockWorkersReady(len(c.queryWorkers), c.workerDoneStart)
+
 	// start query computation
 	result, err := c.Compute()
 	if err != nil {
@@ -257,7 +259,6 @@ func (c *Coord) Compute() (interface{}, error) {
 	// need to make it concurrent; so put in separate channel
 
 	numWorkers := len(c.queryWorkers)
-	c.blockWorkersReady(numWorkers, c.workerDoneStart)
 
 	for {
 		select {
@@ -284,7 +285,7 @@ func (c *Coord) Compute() (interface{}, error) {
 			progressSuperStep := ProgressSuperStep{
 				SuperStepNum: c.superStepNumber,
 				IsCheckpoint: shouldCheckPoint,
-				IsRestart:    result.isRestart, // TODO
+				IsRestart:    result.isRestart,
 			}
 			log.Printf(
 				"Coord: Compute: progressing super step # %d, should checkpoint %v \n",
@@ -306,7 +307,7 @@ func (c *Coord) Compute() (interface{}, error) {
 }
 
 func (c *Coord) restartCheckpoint() {
-	log.Printf("Coord - restart checkpoint\n")
+	log.Printf("Coord - restart checkpoint with %v\n", c.lastCheckpointNumber)
 	checkpointNumber := c.lastCheckpointNumber
 	numWorkers := len(c.queryWorkers)
 
