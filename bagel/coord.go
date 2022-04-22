@@ -375,7 +375,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	} else {
 		c.workers[w.WorkerId] = client
 		log.Printf(
-			"JoinWorker: Worker %d queued until the end of the query!\n",
+			"JoinWorker: Worker %d will be added in the next query!\n",
 			w.WorkerId,
 		)
 	}

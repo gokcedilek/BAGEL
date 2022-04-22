@@ -92,6 +92,17 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 	defer db.Close()
 
+	// clear larger checkpoints that were saved
+	if _, err := db.Exec(
+		"delete from checkpoints where lastCheckpointNumber"+
+			">=?", checkpoint.SuperStepNumber,
+	); err != nil {
+		log.Printf(
+			"storeCheckpoint: Failed execute"+
+				" command: %v\n", err,
+		)
+	}
+
 	var buf bytes.Buffer
 	if err = gob.NewEncoder(&buf).Encode(checkpoint.CheckpointState); err != nil {
 		log.Printf("storeCheckpoint: encode error: %v\n", err)
