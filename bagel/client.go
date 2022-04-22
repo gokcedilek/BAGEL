@@ -49,14 +49,17 @@ func (c *GraphClient) doQuery(query Query) {
 	// TODO: implement timeout? or retry behavior? or stop handling?
 	err := c.coordClient.Call("Coord.StartQuery", query, &result)
 	if err != nil {
-		log.Printf("sendQuery: error calling Coord.DoQuery:  %v\n", err)
+		log.Printf(
+			"doQuery: error calling Coord.StartQuery:  %v\n",
+			err,
+		)
 	}
-
-	log.Printf("client received result: %v\n", result)
 
 	if result.Error != "" {
-		log.Printf("client received error: %v\n", result)
+		log.Printf("doQuery: received error: %v\n", result.Error)
 	}
+
+	log.Printf("doQuery: received result: %v\n", result.Result)
 
 	c.notifyCh <- result
 }
@@ -67,7 +70,6 @@ func (c *GraphClient) doQuery(query Query) {
 func (c *GraphClient) Start(
 	clientId string, coordAddr string, clientAddr string,
 ) (chan QueryResult, error) {
-	log.Printf("Start\n")
 
 	// set up client state
 	c.clientId = clientId
