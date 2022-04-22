@@ -39,7 +39,7 @@ func (c *GraphClient) SendQuery(query Query) error {
 		return errors.New("unknown query type")
 	}
 
-	log.Printf("Client: SendQuery: query is queued up to be sent.")
+	log.Printf("SendQuery: query is queued up to be sent.")
 	go c.doQuery(query)
 	return nil
 }
@@ -50,16 +50,16 @@ func (c *GraphClient) doQuery(query Query) {
 	err := c.coordClient.Call("Coord.StartQuery", query, &result)
 	if err != nil {
 		log.Printf(
-			"Client: doQuery: error calling Coord.StartQuery:  %v\n",
+			"doQuery: error calling Coord.StartQuery:  %v\n",
 			err,
 		)
 	}
 
 	if result.Error != "" {
-		log.Printf("Client: doQuery: received error: %v\n", result.Error)
+		log.Printf("doQuery: received error: %v\n", result.Error)
 	}
 
-	log.Printf("Client: doQuery: received result: %v\n", result.Result)
+	log.Printf("doQuery: received result: %v\n", result.Result)
 
 	c.notifyCh <- result
 }

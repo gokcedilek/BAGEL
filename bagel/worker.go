@@ -75,7 +75,7 @@ func NewWorker(config WorkerConfig) *Worker {
 }
 
 func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
-	log.Printf("Worker: StartFCheckHBeat for worker %d\n", workerId)
+	log.Printf("StartFCheckHBeat for worker %d\n", workerId)
 
 	fcheckConfig := fchecker.StartStruct{
 		AckLocalIPAckLocalPort: ackAddress,
@@ -106,7 +106,7 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 		w.config.WorkerId, numWorkers,
 	)
 	log.Printf(
-		"Worker: retrieveVertices retrieved %v vertices for worker %v from the"+
+		"retrieveVertices: retrieved %v vertices for worker %v from the"+
 			" db!\n",
 		len(vertices),
 		w.config.WorkerId,
@@ -143,7 +143,7 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 	w.workerMutex.Unlock()
 
 	log.Printf(
-		"Worker: retrieveVertices created partition of %v vertices for worker"+
+		"retrieveVertices: created partition of %v vertices for worker"+
 			" %v"+
 			" from the"+
 			" db!\n",
@@ -163,13 +163,13 @@ func (w *Worker) StartQuery(
 	// setup local checkpoints storage for the worker
 	err := w.initializeCheckpoints()
 	util.CheckErr(
-		err, "Worker: StartQuery: Worker %v could not setup checkpoints db\n",
+		err, "StartQuery: Worker %v could not setup checkpoints db\n",
 		w.config.WorkerId,
 	)
 
 	// workers need to connect to the db and initialize state
 	log.Printf(
-		"Worker: StartQuery: worker %v connecting to db from %v\n",
+		"StartQuery: worker %v connecting to db from %v\n",
 		w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
@@ -187,14 +187,14 @@ func (w *Worker) RevertToLastCheckpoint(
 	w.Query = req.Query
 
 	log.Printf(
-		"Worker: running RevertToLastCheckpoint with superstep number: %v\n",
+		"running RevertToLastCheckpoint with superstep number: %v\n",
 		req.SuperStepNumber,
 	)
 
 	// if failed before saving a checkpoint, revert back to initial state
 	if req.SuperStepNumber == 0 {
 		log.Printf(
-			"Worker: RevertToLastCheckpoint: worker %v reverting back to"+
+			"RevertToLastCheckpoint: worker %v reverting back to"+
 				" initial state with %v workers\n",
 			w.config.WorkerId, w.NumWorkers,
 		)
@@ -207,7 +207,7 @@ func (w *Worker) RevertToLastCheckpoint(
 
 	if err != nil {
 		log.Printf(
-			"Worker: RevertToLastCheckpoint: error retrieving checkpoint: %v"+
+			"RevertToLastCheckpoint: error retrieving checkpoint: %v"+
 				"\n", err,
 		)
 		return err
@@ -241,7 +241,7 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.LocalWorkerListAddr)
 	util.CheckErr(
 		err,
-		"Worker: listenCoord: worker %v could not resolve WorkerListenAddr"+
+		"listenCoord: worker %v could not resolve WorkerListenAddr"+
 			": %v",
 		w.config.WorkerId,
 		w.config.WorkerListenAddr,
@@ -249,7 +249,7 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 	listen, err := net.ListenTCP("tcp", listenAddr)
 	util.CheckErr(
 		err,
-		"Worker: listenCoord: worker %v could not listen on listenAddr: %v",
+		"listenCoord: worker %v could not listen on listenAddr: %v",
 		w.config.WorkerId,
 		listenAddr,
 	)
@@ -258,7 +258,7 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 		conn, err := listen.Accept()
 		util.CheckErr(
 			err,
-			"Worker: listenCoord: worker %v could not accept connections\n",
+			"listenCoord: worker %v could not accept connections\n",
 			w.config.WorkerId,
 		)
 		go handler.ServeConn(conn)
@@ -270,10 +270,13 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 func (w *Worker) register() {
 	handler := rpc.NewServer()
 	err := handler.Register(w)
-	log.Printf(
-		"Worker: register error: %v\n",
-		err,
-	)
+
+	if err != nil {
+		log.Printf(
+			"register error: %v\n",
+			err,
+		)
+	}
 
 	go w.listenCoord(handler)
 }
@@ -294,7 +297,7 @@ func (w *Worker) Start() error {
 
 	util.CheckErr(
 		err,
-		"Worker: Start: worker %d failed to Dial Coordinator - %s\n",
+		"Start: worker %d failed to Dial Coordinator - %s\n",
 		w.config.WorkerId,
 		w.config.CoordAddr,
 	)
@@ -306,7 +309,7 @@ func (w *Worker) Start() error {
 		w.config.WorkerId, w.config.LocalFCheckAckLocalAddress,
 	)
 	log.Printf(
-		"Worker: Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId,
+		"Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId,
 		hBeatAddr,
 	)
 
@@ -318,12 +321,12 @@ func (w *Worker) Start() error {
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
 	util.CheckErr(
-		err, "Worker: Start: Worker %v could not join with error: %v\n",
+		err, "Start: Worker %v could not join with error: %v\n",
 		w.config.WorkerId, err,
 	)
 
 	log.Printf(
-		"Worker: Start: worker %v joined to coord successfully\n",
+		"Start: worker %v joined to coord successfully\n",
 		w.config.WorkerId,
 	)
 
@@ -347,12 +350,12 @@ func (w *Worker) ComputeVertices(
 		_, err := w.storeCheckpoint(checkpoint)
 		util.CheckErr(
 			err,
-			"Worker: ComputeVertices: worker %v failed to checkpoint # %v\n",
+			"ComputeVertices: worker %v failed to checkpoint # %v\n",
 			w.config.WorkerId,
 			args.SuperStepNum,
 		)
 		log.Printf(
-			"Worker: ComputeVertices: worker %v saved checkpoint at"+
+			"ComputeVertices: worker %v saved checkpoint at"+
 				" superstep %v\n", w.config.WorkerId, args.SuperStepNum,
 		)
 		w.workerMutex.Unlock()
@@ -361,7 +364,7 @@ func (w *Worker) ComputeVertices(
 	err := w.switchToNextSuperStep()
 	if err != nil {
 		log.Printf(
-			"Worker: ComputeVertices: worker %v could not switch to superstep"+
+			"ComputeVertices: worker %v could not switch to superstep"+
 				" %v",
 			w.config.WorkerId, args.SuperStepNum,
 		)
@@ -386,7 +389,7 @@ func (w *Worker) ComputeVertices(
 		// if the current vertex is the source vertex, capture its value
 		if IsTargetVertex(vertex.Id, w.Query.Nodes, vertexType) {
 			log.Printf(
-				"Worker: ComputeVertices: target vertex %v is on"+
+				"ComputeVertices: target vertex %v is on"+
 					" worker %v with value %v at superstep %v\n",
 				vertex.Id, w.config.WorkerId, vertex.CurrentValue,
 				args.SuperStepNum,
@@ -415,7 +418,7 @@ func (w *Worker) ComputeVertices(
 
 			if err != nil {
 				log.Printf(
-					"Worker: ComputeVertices: worker %v could not establish"+
+					"ComputeVertices: worker %v could not establish"+
 						" connection to destination worker %v at addr %v\n",
 					w.config.WorkerId, worker, w.workerDirectory[worker],
 				)
@@ -429,13 +432,13 @@ func (w *Worker) ComputeVertices(
 		)
 		if err != nil {
 			log.Printf(
-				"Worker: ComputeVertices: worker %v could not send messages"+
+				"ComputeVertices: worker %v could not send messages"+
 					" to worker: %v\n",
 				w.config.WorkerId, worker,
 			)
 		}
 		log.Printf(
-			"Worker: ComputeVertices: worker #%v sending %v messages\n",
+			"ComputeVertices: worker #%v sending %v messages\n",
 			w.config.WorkerId,
 			len(batch.Batch),
 		)
@@ -458,7 +461,7 @@ func (w *Worker) PutBatchedMessages(
 		)
 	}
 	log.Printf(
-		"Worker: PutBatchedMessages: worker %v received %v messages",
+		"PutBatchedMessages: worker %v received %v messages",
 		w.config.WorkerId, len(batch.Batch),
 	)
 	w.workerMutex.Unlock()
@@ -491,10 +494,6 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 	for workerId, workerAddr := range newDirectory {
 		if w.workerDirectory[workerId] != workerAddr {
-			//log.Printf(
-			//	"Found outdated address for worker %v; updating to new address %v",
-			//	workerId, workerAddr,
-			//)
 			w.workerDirectory[workerId] = workerAddr
 			delete(w.workerCallBook, workerId)
 		}

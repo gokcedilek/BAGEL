@@ -21,7 +21,7 @@ func (w *Worker) getConnection() (*sql.DB, error) {
 		"sqlite3", fmt.Sprintf("checkpoints%v.db", w.config.WorkerId),
 	)
 	if err != nil {
-		log.Printf("Checkpoints: getConnection database error: %v\n", err)
+		log.Printf("getConnection: database error: %v\n", err)
 		return nil, err
 	}
 	return db, nil
@@ -32,7 +32,7 @@ func (w *Worker) initializeCheckpoints() error {
 
 	if err != nil {
 		log.Printf(
-			"Checkpoints: initializeCheckpoints connection error: %v"+
+			"initializeCheckpoints: connection error: %v"+
 				"\n", err,
 		)
 		return err
@@ -48,7 +48,7 @@ func (w *Worker) initializeCheckpoints() error {
 
 	if _, err := db.Exec(createCheckpoints); err != nil {
 		log.Printf(
-			"Checkpoints: initializeCheckpoints Failed execute"+
+			"initializeCheckpoints: Failed execute"+
 				" command: %v\n", err,
 		)
 		return err
@@ -57,7 +57,7 @@ func (w *Worker) initializeCheckpoints() error {
 	// reset checkpoints
 	if _, err := db.Exec("delete from checkpoints"); err != nil {
 		log.Printf(
-			"Checkpoints: initializeCheckpoints: Failed execute"+
+			"initializeCheckpoints: Failed execute"+
 				" command: %v\n", err,
 		)
 		return err
@@ -94,12 +94,12 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 
 	var buf bytes.Buffer
 	if err = gob.NewEncoder(&buf).Encode(checkpoint.CheckpointState); err != nil {
-		log.Printf("Checkpoints: storeCheckpoint encode error: %v\n", err)
+		log.Printf("storeCheckpoint: encode error: %v\n", err)
 	}
 
 	var buf2 bytes.Buffer
 	if err = gob.NewEncoder(&buf2).Encode(checkpoint.NextSuperStepState); err != nil {
-		log.Printf("Checkpoints: storeCheckpoint: encode error: %v\n", err)
+		log.Printf("storeCheckpoint: encode error: %v\n", err)
 	}
 
 	_, err = db.Exec(
@@ -110,7 +110,7 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	)
 	if err != nil {
 		log.Printf(
-			"Checkpoints: storeCheckpoint error inserting into db: %v"+
+			"storeCheckpoint: error inserting into db: %v"+
 				"\n", err,
 		)
 	}
@@ -119,7 +119,7 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
 	util.CheckErr(
 		err,
-		"Checkpoints: storeCheckpoint worker %v could not dial coord addr %v"+
+		"storeCheckpoint: worker %v could not dial coord addr %v"+
 			"\n", w.config.WorkerAddr,
 		w.config.CoordAddr,
 	)
@@ -133,7 +133,7 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
 	util.CheckErr(
 		err,
-		"Checkpoints: storeCheckpoint worker %v could not call"+
+		"storeCheckpoint: worker %v could not call"+
 			" UpdateCheckpoint",
 		w.config.WorkerAddr,
 	)
@@ -160,7 +160,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	if err := res.Scan(
 		&checkpoint.SuperStepNumber, &buf, &buf2,
 	); err == sql.ErrNoRows {
-		log.Printf("Checkpoints: retrieveCheckpoint scan error: %v\n", err)
+		log.Printf("retrieveCheckpoint: scan error: %v\n", err)
 		return Checkpoint{}, err
 	}
 
@@ -168,7 +168,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	err = gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&checkpointState)
 	if err != nil {
 		log.Printf(
-			"Checkpoints: retrieveCheckpoint decode error: %v, tmp: %v\n", err,
+			"retrieveCheckpoint: decode error: %v, tmp: %v\n", err,
 			checkpointState,
 		)
 		return Checkpoint{}, err
@@ -179,7 +179,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	err = gob.NewDecoder(bytes.NewBuffer(buf2)).Decode(&nextSuperStepState)
 	if err != nil {
 		log.Printf(
-			"Checkpoints: retrieveCheckpoint decode error: %v, tmp: %v\n", err,
+			"retrieveCheckpoint: decode error: %v, tmp: %v\n", err,
 			checkpointState,
 		)
 		return Checkpoint{}, err
