@@ -2,7 +2,6 @@ package bagel
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"math"
 	"net"
@@ -76,7 +75,7 @@ func NewWorker(config WorkerConfig) *Worker {
 }
 
 func (w *Worker) startFCheckHBeat(workerId uint32, ackAddress string) string {
-	log.Printf("StartFCheckHBeat for worker %d\n", workerId)
+	log.Printf("Worker: StartFCheckHBeat for worker %d\n", workerId)
 
 	fcheckConfig := fchecker.StartStruct{
 		AckLocalIPAckLocalPort: ackAddress,
@@ -106,8 +105,10 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 	vertices, err := database.GetVerticesModulo(
 		w.config.WorkerId, numWorkers,
 	)
-	fmt.Printf(
-		"retrieved %v vertices for worker %v from the db!\n", len(vertices),
+	log.Printf(
+		"Worker: retrieveVertices retrieved %v vertices for worker %v from the"+
+			" db!\n",
+		len(vertices),
 		w.config.WorkerId,
 	)
 	if err != nil {
@@ -141,7 +142,14 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 	}
 	w.workerMutex.Unlock()
 
-	log.Printf("total # vertices belonging to worker: %v\n", len(w.Vertices))
+	log.Printf(
+		"Worker: retrieveVertices created partition of %v vertices for worker"+
+			" %v"+
+			" from the"+
+			" db!\n",
+		len(w.Vertices),
+		w.config.WorkerId,
+	)
 }
 
 func (w *Worker) StartQuery(
@@ -155,13 +163,14 @@ func (w *Worker) StartQuery(
 	// setup local checkpoints storage for the worker
 	err := w.initializeCheckpoints()
 	util.CheckErr(
-		err, "Start: Worker %v could not setup checkpoints db\n",
+		err, "Worker: StartQuery: Worker %v could not setup checkpoints db\n",
 		w.config.WorkerId,
 	)
 
 	// workers need to connect to the db and initialize state
 	log.Printf(
-		"StartQuery: worker %v connecting to db from %v\n", w.config.WorkerId,
+		"Worker: StartQuery: worker %v connecting to db from %v\n",
+		w.config.WorkerId,
 		w.config.WorkerAddr,
 	)
 
@@ -172,24 +181,21 @@ func (w *Worker) StartQuery(
 func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
-	fmt.Printf(
-		"RevertToLastCheckpoint: worker %v worker directory: %v\n",
-		w.config.WorkerId, req.WorkerDirectory,
-	)
 	w.NumWorkers = uint32(req.NumWorkers)
 	w.UpdateWorkerCallBook(req.WorkerDirectory)
 	w.workerCallBook = make(map[uint32]*rpc.Client)
 	w.Query = req.Query
 
 	log.Printf(
-		"RevertToLastCheckpoint: worker %v received %v\n", w.config.WorkerId,
-		req,
+		"Worker: running RevertToLastCheckpoint with superstep number: %v\n",
+		req.SuperStepNumber,
 	)
 
 	// if failed before saving a checkpoint, revert back to initial state
 	if req.SuperStepNumber == 0 {
 		log.Printf(
-			"RevertToLastCheckpoint: worker %v reverting back to initial state with %v workers\n",
+			"Worker: RevertToLastCheckpoint: worker %v reverting back to"+
+				" initial state with %v workers\n",
 			w.config.WorkerId, w.NumWorkers,
 		)
 		w.retrieveVertices(req.NumWorkers)
@@ -201,13 +207,11 @@ func (w *Worker) RevertToLastCheckpoint(
 
 	if err != nil {
 		log.Printf(
-			"RevertToLastCheckpoint: error retrieving checkpoint: %v\n", err,
+			"Worker: RevertToLastCheckpoint: error retrieving checkpoint: %v"+
+				"\n", err,
 		)
 		return err
 	}
-	log.Printf(
-		"RevertToLastCheckpoint: superstep number: %v\n", req.SuperStepNumber,
-	)
 
 	// set vertex state
 	w.Vertices = make(map[uint64]*Vertex)
@@ -237,13 +241,16 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 	listenAddr, err := net.ResolveTCPAddr("tcp", w.config.LocalWorkerListAddr)
 	util.CheckErr(
 		err,
-		"Worker %v could not resolve WorkerListenAddr: %v", w.config.WorkerId,
+		"Worker: listenCoord: worker %v could not resolve WorkerListenAddr"+
+			": %v",
+		w.config.WorkerId,
 		w.config.WorkerListenAddr,
 	)
 	listen, err := net.ListenTCP("tcp", listenAddr)
 	util.CheckErr(
 		err,
-		"Worker %v could not listen on listenAddr: %v", w.config.WorkerId,
+		"Worker: listenCoord: worker %v could not listen on listenAddr: %v",
+		w.config.WorkerId,
 		listenAddr,
 	)
 
@@ -251,7 +258,8 @@ func (w *Worker) listenCoord(handler *rpc.Server) {
 		conn, err := listen.Accept()
 		util.CheckErr(
 			err,
-			"Worker %v could not accept connections\n", w.config.WorkerId,
+			"Worker: listenCoord: worker %v could not accept connections\n",
+			w.config.WorkerId,
 		)
 		go handler.ServeConn(conn)
 	}
@@ -263,7 +271,8 @@ func (w *Worker) register() {
 	handler := rpc.NewServer()
 	err := handler.Register(w)
 	log.Printf(
-		"register: Worker %v - register error: %v\n", w.config.WorkerId, err,
+		"Worker: register error: %v\n",
+		err,
 	)
 
 	go w.listenCoord(handler)
@@ -283,13 +292,10 @@ func (w *Worker) Start() error {
 		w.config.LocalWorkerAddr, w.config.CoordAddr,
 	)
 
-	if err != nil {
-		fmt.Println(err)
-	}
-
 	util.CheckErr(
 		err,
-		"Worker %d failed to Dial Coordinator - %s\n", w.config.WorkerId,
+		"Worker: Start: worker %d failed to Dial Coordinator - %s\n",
+		w.config.WorkerId,
 		w.config.CoordAddr,
 	)
 
@@ -300,7 +306,8 @@ func (w *Worker) Start() error {
 		w.config.WorkerId, w.config.LocalFCheckAckLocalAddress,
 	)
 	log.Printf(
-		"Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId, hBeatAddr,
+		"Worker: Start: hBeatAddr for Worker %d is %v\n", w.config.WorkerId,
+		hBeatAddr,
 	)
 
 	workerNode := WorkerNode{
@@ -311,11 +318,12 @@ func (w *Worker) Start() error {
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
 	util.CheckErr(
-		err, "Start: Worker %v could not join\n", w.config.WorkerId,
+		err, "Worker: Start: Worker %v could not join with error: %v\n",
+		w.config.WorkerId, err,
 	)
 
 	log.Printf(
-		"Start: worker %v joined to coord successfully\n",
+		"Worker: Start: worker %v joined to coord successfully\n",
 		w.config.WorkerId,
 	)
 
@@ -339,8 +347,13 @@ func (w *Worker) ComputeVertices(
 		_, err := w.storeCheckpoint(checkpoint)
 		util.CheckErr(
 			err,
-			"Worker %v failed to checkpoint # %v\n", w.config.WorkerId,
+			"Worker: ComputeVertices: worker %v failed to checkpoint # %v\n",
+			w.config.WorkerId,
 			args.SuperStepNum,
+		)
+		log.Printf(
+			"Worker: ComputeVertices: worker %v saved checkpoint at"+
+				" superstep %v\n", w.config.WorkerId, args.SuperStepNum,
 		)
 		w.workerMutex.Unlock()
 	}
@@ -348,7 +361,8 @@ func (w *Worker) ComputeVertices(
 	err := w.switchToNextSuperStep()
 	if err != nil {
 		log.Printf(
-			"ComputeVertices: worker %v could not switch to superstep %v",
+			"Worker: ComputeVertices: worker %v could not switch to superstep"+
+				" %v",
 			w.config.WorkerId, args.SuperStepNum,
 		)
 	}
@@ -372,7 +386,8 @@ func (w *Worker) ComputeVertices(
 		// if the current vertex is the source vertex, capture its value
 		if IsTargetVertex(vertex.Id, w.Query.Nodes, vertexType) {
 			log.Printf(
-				"ComputeVertices -- found TARGET vertex %v on worker %v with value %v at superstep %v\n",
+				"Worker: ComputeVertices: target vertex %v is on"+
+					" worker %v with value %v at superstep %v\n",
 				vertex.Id, w.config.WorkerId, vertex.CurrentValue,
 				args.SuperStepNum,
 			)
@@ -400,7 +415,8 @@ func (w *Worker) ComputeVertices(
 
 			if err != nil {
 				log.Printf(
-					"Worker %v could not establish connection to destination worker %v at addr %v\n",
+					"Worker: ComputeVertices: worker %v could not establish"+
+						" connection to destination worker %v at addr %v\n",
 					w.config.WorkerId, worker, w.workerDirectory[worker],
 				)
 				continue
@@ -413,12 +429,14 @@ func (w *Worker) ComputeVertices(
 		)
 		if err != nil {
 			log.Printf(
-				"ComputeVertices: worker %v could not send messages to worker: %v\n",
+				"Worker: ComputeVertices: worker %v could not send messages"+
+					" to worker: %v\n",
 				w.config.WorkerId, worker,
 			)
 		}
 		log.Printf(
-			"Worker #%v sending %v messages\n", w.config.WorkerId,
+			"Worker: ComputeVertices: worker #%v sending %v messages\n",
+			w.config.WorkerId,
 			len(batch.Batch),
 		)
 	}
@@ -426,11 +444,6 @@ func (w *Worker) ComputeVertices(
 	resp.SuperStepNum = args.SuperStepNum
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
-
-	log.Printf(
-		"Should notify Coord active for ssn %d = %v, %v\n", args.SuperStepNum,
-		resp.IsActive, resp,
-	)
 
 	return nil
 }
@@ -445,7 +458,8 @@ func (w *Worker) PutBatchedMessages(
 		)
 	}
 	log.Printf(
-		"Worker %v received %v messages", w.config.WorkerId, len(batch.Batch),
+		"Worker: PutBatchedMessages: worker %v received %v messages",
+		w.config.WorkerId, len(batch.Batch),
 	)
 	w.workerMutex.Unlock()
 
@@ -454,11 +468,6 @@ func (w *Worker) PutBatchedMessages(
 }
 
 func (w *Worker) switchToNextSuperStep() error {
-	log.Printf(
-		"switchToNextSuperStep: Worker %v progressing to next superstep\n",
-		w.config.WorkerId,
-	)
-
 	w.workerMutex.Lock()
 	w.SuperStep = w.NextSuperStep
 	w.NextSuperStep = NewSuperStep()
@@ -482,10 +491,10 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 	for workerId, workerAddr := range newDirectory {
 		if w.workerDirectory[workerId] != workerAddr {
-			log.Printf(
-				"Found outdated address for worker %v; updating to new address %v",
-				workerId, workerAddr,
-			)
+			//log.Printf(
+			//	"Found outdated address for worker %v; updating to new address %v",
+			//	workerId, workerAddr,
+			//)
 			w.workerDirectory[workerId] = workerAddr
 			delete(w.workerCallBook, workerId)
 		}

@@ -17,7 +17,9 @@ func main() {
 	util.CheckErr(err, "Error reading client config: %v\n", err)
 
 	// create a log file and log to both console and terminal
-	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(
+		"bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -77,18 +79,22 @@ func main() {
 	}
 
 	client := bagel.NewClient()
-	notifyCh, err := client.Start(config.ClientId, config.CoordAddr, config.ClientAddr)
+	notifyCh, err := client.Start(
+		config.ClientId, config.CoordAddr, config.ClientAddr,
+	)
 	util.CheckErr(err, "Error connecting to coord: %v\n", err)
 
 	numQueries := 1
-	log.Printf("send query: %v\n", query)
 	err = client.SendQuery(query)
 	util.CheckErr(err, "Error sending query: %v\n", err)
-	log.Println("Send query succesful")
+	log.Printf("Client sent %v with %v\n", query.QueryType, query.Nodes)
 
 	for i := 0; i < numQueries; i++ {
 		result := <-notifyCh
-		log.Printf("client %v received result: %v\n", config.ClientId, result)
+		if result.Error != "" {
+			log.Printf("Client: SendQuery error: %v\n", result.Error)
+		}
+		log.Printf("Client: SendQuery received result: %v\n", result.Result)
 	}
 
 }
