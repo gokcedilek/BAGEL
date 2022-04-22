@@ -102,6 +102,7 @@ func NewSuperStep() *SuperStep {
 }
 
 func (w *Worker) retrieveVertices(numWorkers uint8) {
+	w.Vertices = make(map[uint64]*Vertex)
 	vertices, err := database.GetVerticesModulo(
 		w.config.WorkerId, numWorkers,
 	)
