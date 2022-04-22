@@ -21,7 +21,7 @@ func (w *Worker) getConnection() (*sql.DB, error) {
 		"sqlite3", fmt.Sprintf("checkpoints%v.db", w.config.WorkerId),
 	)
 	if err != nil {
-		log.Printf("getConnection database error: %v\n", err)
+		log.Printf("getConnection: database error: %v\n", err)
 		return nil, err
 	}
 	return db, nil
@@ -31,7 +31,10 @@ func (w *Worker) initializeCheckpoints() error {
 	db, err := w.getConnection()
 
 	if err != nil {
-		log.Printf("initializeCheckpoints: connection error: %v\n", err)
+		log.Printf(
+			"initializeCheckpoints: connection error: %v"+
+				"\n", err,
+		)
 		return err
 	}
 
@@ -44,13 +47,19 @@ func (w *Worker) initializeCheckpoints() error {
 	  );`
 
 	if _, err := db.Exec(createCheckpoints); err != nil {
-		log.Printf("initializeCheckpoints: Failed execute command: %v\n", err)
+		log.Printf(
+			"initializeCheckpoints: Failed execute"+
+				" command: %v\n", err,
+		)
 		return err
 	}
 
 	// reset checkpoints
 	if _, err := db.Exec("delete from checkpoints"); err != nil {
-		log.Printf("initializeCheckpoints: Failed execute command: %v\n", err)
+		log.Printf(
+			"initializeCheckpoints: Failed execute"+
+				" command: %v\n", err,
+		)
 		return err
 	}
 
@@ -83,6 +92,17 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 	defer db.Close()
 
+	// clear larger checkpoints that were saved
+	if _, err := db.Exec(
+		"delete from checkpoints where lastCheckpointNumber"+
+			">=?", checkpoint.SuperStepNumber,
+	); err != nil {
+		log.Printf(
+			"storeCheckpoint: Failed execute"+
+				" command: %v\n", err,
+		)
+	}
+
 	var buf bytes.Buffer
 	if err = gob.NewEncoder(&buf).Encode(checkpoint.CheckpointState); err != nil {
 		log.Printf("storeCheckpoint: encode error: %v\n", err)
@@ -100,14 +120,18 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		buf2.Bytes(),
 	)
 	if err != nil {
-		log.Printf("storeCheckpoint: error inserting into db: %v\n", err)
+		log.Printf(
+			"storeCheckpoint: error inserting into db: %v"+
+				"\n", err,
+		)
 	}
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
 	util.CheckErr(
 		err,
-		"worker %v could not dial coord addr %v\n", w.config.WorkerAddr,
+		"storeCheckpoint: worker %v could not dial coord addr %v"+
+			"\n", w.config.WorkerAddr,
 		w.config.CoordAddr,
 	)
 
@@ -117,14 +141,11 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 
 	var reply CheckpointMsg
-	log.Printf(
-		"storeCheckpoints: calling coord with checkpointMsg: %v\n",
-		checkpointMsg,
-	)
 	err = coordClient.Call("Coord.UpdateCheckpoint", checkpointMsg, &reply)
 	util.CheckErr(
 		err,
-		"storeCheckpoints: worker %v could not call UpdateCheckpoint",
+		"storeCheckpoint: worker %v could not call"+
+			" UpdateCheckpoint",
 		w.config.WorkerAddr,
 	)
 
