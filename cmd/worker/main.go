@@ -56,8 +56,10 @@ func main() {
 	)
 	log.Printf("Main: starting Worker %v\n", config.WorkerId)
 
-	//worker := bagel.NewWorker(config)
-	//
-	//go worker.Start()
-	//workerWG.Wait()
+	log.Printf("config: %v\n", config)
+
+	worker := bagel.NewWorker(config)
+
+	go worker.Start()
+	workerWG.Wait()
 }

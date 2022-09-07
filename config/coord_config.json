@@ -1,1 +1,1 @@
-{"ClientAPIListenAddr":":56837","WorkerAPIListenAddr":":59141","LostMsgsThresh":3,"StepsBetweenCheckpoints":5}
+{"ClientAPIListenAddr":":56837","WorkerAPIListenAddr":"coord:59141","LostMsgsThresh":3,"StepsBetweenCheckpoints":5}

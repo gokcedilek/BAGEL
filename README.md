@@ -55,9 +55,17 @@ worker3_config.json assigned to server Anvil : 20.69.158.88
      - `client pagerank {vertex}` finds the PageRank of the vertex
 
 
-### Running the code with Docker
-- Run coord: `docker build -f Dockerfile.coord 
-  -t coord .` and `docker run coord`
-- Run worker(s): `docker build -f Dockerfile.
-  worker -t worker .` and `docker run worker 
-  <workerId>`
+### Setup the code with Docker
+- Create a user-defined bridge network: `docker network create bagel`
+- Start coord: 
+  - Build: `docker build -f Dockerfile.coord -t 
+    coord .`
+  - Remove previous container: `docker rm coord`
+  - Run: `docker run --name coord --network bagel 
+    coord`
+- Start worker(s): 
+  - Build: `docker build -f Dockerfile.worker -t 
+    worker .` 
+  - Remove previous container: `docker rm worker0`
+  - Run: `docker run 
+    --name worker0 --network bagel worker 0`
