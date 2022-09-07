@@ -1,1 +1,1 @@
-{"WorkerId":2,"CoordAddr":"20.83.241.160:59141","WorkerAddr":"20.230.176.102:58325","WorkerListenAddr":"20.230.176.102:50657","FCheckAckLocalAddress":"20.230.176.102:61328"}
+{"WorkerId":2,"CoordAddr":"127.0.0.1:59141","WorkerAddr":"127.0.0.1:58325","WorkerListenAddr":"127.0.0.1:50657","FCheckAckLocalAddress":"127.0.0.1:61328"}

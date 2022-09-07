@@ -53,3 +53,11 @@ worker3_config.json assigned to server Anvil : 20.69.158.88
    - `./bin/client` runs a client instance that can be used to queue up requests
      - `client shortestpath {vertex1} {vertex2}` runs a shortest path calculation from vertex1 to vertex2
      - `client pagerank {vertex}` finds the PageRank of the vertex
+
+
+### Running the code with Docker
+- Run coord: `docker build -f Dockerfile.coord 
+  -t coord .` and `docker run coord`
+- Run worker(s): `docker build -f Dockerfile.
+  worker -t worker .` and `docker run worker 
+  <workerId>`

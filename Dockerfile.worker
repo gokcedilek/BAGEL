@@ -1,0 +1,22 @@
+FROM golang:1.16-alpine
+RUN apk add build-base
+
+WORKDIR /worker
+
+COPY go.mod ./
+COPY go.sum ./
+
+RUN go mod download
+
+COPY . .
+
+RUN go build -o bin/worker ./cmd/worker
+
+EXPOSE 55505 59061 65116
+
+ENTRYPOINT [ "./bin/worker" ]
+CMD ["0"]
+
+
+
+
