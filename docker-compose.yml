@@ -1,0 +1,33 @@
+version: '3.4'
+services:
+  coord:
+    build:
+      context: .
+      dockerfile: Dockerfile.coord
+    container_name: coord
+    image: coord:coord-latest
+    ports:
+      - '56837:56837'
+      - '59141:59141'
+    networks:
+      - bagel
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: worker0
+    image: worker0:worker0-latest
+    depends_on:
+      - coord
+    command: "0"
+    ports:
+      - '55505:55505'
+      - '59061:59061'
+      - '65116:65116'
+    networks:
+      - bagel
+
+
+networks:
+  bagel:
+    driver: bridge
