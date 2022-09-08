@@ -11,7 +11,7 @@ services:
       - '59141:59141'
     networks:
       - bagel
-  worker:
+  worker0:
     build:
       context: .
       dockerfile: Dockerfile.worker
@@ -24,6 +24,22 @@ services:
       - '55505:55505'
       - '59061:59061'
       - '65116:65116'
+    networks:
+      - bagel
+  worker1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: worker1
+    image: worker1:worker1-latest
+    depends_on:
+      - coord
+      - worker0
+    command: "1"
+    ports:
+      - '63517:63517'
+      - '55328:55328'
+      - '52205:52205'
     networks:
       - bagel
 

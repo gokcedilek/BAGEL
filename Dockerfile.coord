@@ -12,7 +12,7 @@ COPY . .
 
 RUN go build -o bin/coord ./cmd/coord
 
-EXPOSE 56837 59141
+# EXPOSE 56837 59141
 
 CMD [ "./bin/coord" ]
 

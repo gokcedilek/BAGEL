@@ -12,10 +12,10 @@ COPY . .
 
 RUN go build -o bin/worker ./cmd/worker
 
-EXPOSE 55505 59061 65116
+# EXPOSE 55505 59061 65116
 
 ENTRYPOINT [ "./bin/worker" ]
-CMD ["1"]
+CMD ["0"]
 
 
 
