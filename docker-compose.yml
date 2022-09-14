@@ -5,10 +5,9 @@ services:
       context: .
       dockerfile: Dockerfile.coord
     container_name: coord
-    image: coord:coord-latest
+    image: coord
     ports:
       - '56837:56837'
-      - '59141:59141'
     networks:
       - bagel
   worker0:
@@ -16,14 +15,10 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: worker0
-    image: worker0:worker0-latest
+    image: worker0
     depends_on:
       - coord
-    command: "0"
-    ports:
-      - '55505:55505'
-      - '59061:59061'
-      - '65116:65116'
+    command: '0'
     networks:
       - bagel
   worker1:
@@ -31,18 +26,13 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: worker1
-    image: worker1:worker1-latest
+    image: worker1
     depends_on:
       - coord
       - worker0
-    command: "1"
-    ports:
-      - '63517:63517'
-      - '55328:55328'
-      - '52205:52205'
+    command: '1'
     networks:
       - bagel
-
 
 networks:
   bagel:
