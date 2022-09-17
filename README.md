@@ -68,5 +68,6 @@ worker3_config.json assigned to server Anvil : 20.69.158.88
 
 ### Run the code with Docker-compose
 
-- `docker compose build` (not necessarily needed)
+- `docker compose build` (when `docker-compose.
+  yml` is updated)
 - `docker compose up`
