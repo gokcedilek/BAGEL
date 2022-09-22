@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"log"
@@ -34,19 +35,58 @@ func GetDynamoClient() *dynamodb.Client {
 	return dynamodb.NewFromConfig(config)
 }
 
-func InsertVertex(svc *dynamodb.Client, tableName string, vertex Vertex) {
+func GetVertexByID(svc *dynamodb.Client, vertexId int64, tableName string) (Vertex, error) {
 	if svc == nil {
 		svc = GetDynamoClient()
 	}
 
-	db_vertex := marshalVertex(tableName, vertex)
-	out, err := svc.PutItem(context.TODO(), &db_vertex)
+	res, err := svc.GetItem(context.TODO(), &dynamodb.GetItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"ID": &types.AttributeValueMemberN{Value: strconv.FormatInt(vertexId, 10)},
+		},
+	})
 
 	if err != nil {
-		log.Fatalf("Failed to insert vertex %v\n", vertex.ID, err)
+		return Vertex{}, err
 	}
 
-	fmt.Println(out.Attributes)
+	vertex := Vertex{}
+	attributevalue.UnmarshalMap(res.Item, &vertex)
+	return vertex, nil
+}
+
+func GetPartition(svc *dynamodb.Client, tableName string, partitionNum int) ([]Vertex, error) {
+	return nil, nil // todo
+}
+
+func PartitionGraph(svc *dynamodb.Client, tableName string, numPartition int) {
+	GetAllVertices(svc, tableName)
+}
+
+func GetAllVertices(svc *dynamodb.Client, tableName string) []Vertex {
+	p := dynamodb.NewScanPaginator(svc, &dynamodb.ScanInput{
+		TableName: aws.String(tableName),
+	})
+	fmt.Println(p)
+	return nil
+}
+
+func IsPartitionCached(svc *dynamodb.Client, tableName string, numPartition int) bool {
+	limit := int32(1)
+	partitionName := getNumberOfWorkersXName(numPartition)
+
+	out, err := svc.Scan(context.TODO(), &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String(fmt.Sprintf("attribute_exists(%s)", partitionName)),
+		Limit:            &limit,
+	})
+
+	if err != nil {
+		log.Fatalf("Failed to verify partition cache %v\n", err)
+	}
+
+	return len(out.Items) != 0
 }
 
 func BatchInsertVertices(svc *dynamodb.Client, tableName string, vertices []Vertex) {
@@ -63,8 +103,10 @@ func BatchInsertVertices(svc *dynamodb.Client, tableName string, vertices []Vert
 			log.Fatalf("Failed to upload batch %v. Here's why %v\n", b, err)
 		}
 
-		log.Printf("Successfully uploaded batch %v/%v\n", b, numBatches)
+		log.Printf("Successfully uploaded batch %v/%v\n", b+1, numBatches)
 	}
+
+	log.Printf("%v batches added to %v", numBatches, tableName)
 }
 
 func getBatches(tableName string, vertices []Vertex) ([][]types.WriteRequest, int) {
@@ -90,17 +132,6 @@ func getBatches(tableName string, vertices []Vertex) ([][]types.WriteRequest, in
 	return batches, numBatches
 }
 
-func marshalVertex(tableName string, vertex Vertex) dynamodb.PutItemInput {
-	return dynamodb.PutItemInput{
-		TableName: aws.String(tableName),
-		Item: map[string]types.AttributeValue{
-			"ID":    &types.AttributeValueMemberN{Value: strconv.FormatUint(vertex.ID, 10)},
-			"Edges": &types.AttributeValueMemberL{Value: edgesToAttributeValueSlice(vertex.Edges)},
-			"Hash":  &types.AttributeValueMemberN{Value: strconv.FormatInt(vertex.Hash, 10)},
-		},
-	}
-}
-
 func marshalVertexWriteReq(vertex Vertex) types.WriteRequest {
 	return types.WriteRequest{
 		PutRequest: &types.PutRequest{
@@ -119,4 +150,8 @@ func edgesToAttributeValueSlice(edges []uint64) []types.AttributeValue {
 		as[idx] = &types.AttributeValueMemberN{Value: strconv.FormatUint(edge, 10)}
 	}
 	return as
+}
+
+func getNumberOfWorkersXName(x int) string {
+	return fmt.Sprintf("P%d", x)
 }

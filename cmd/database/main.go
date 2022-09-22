@@ -1,9 +1,8 @@
 package main
 
 import (
-	"path/filepath"
+	"fmt"
 	"project/database"
-	"project/util"
 )
 
 const (
@@ -15,8 +14,10 @@ const (
 func main() {
 
 	svc := database.GetDynamoClient()
-	database.AddGoogleGraphBagel(filepath.Join(util.GetProjectRoot(), "web-Google.txt"), svc)
+	//database.AddGoogleGraphBagel(filepath.Join(util.GetProjectRoot(), "web-Google.txt"), svc)
 
+	fmt.Println(database.IsPartitionCached(svc, "bagel-db", 2))
+	//database.GetVertexByID(svc, 209963, "bagel-db")
 	//logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	//if err != nil {
 	//	log.Fatal(err)
