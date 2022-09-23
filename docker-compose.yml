@@ -1,5 +1,17 @@
 version: '3.4'
 services:
+  client:
+    build:
+      context: client
+      dockerfile: Dockerfile
+    container_name: client
+    image: client
+    volumes:
+      - ./client/src:/client/src
+    ports:
+      - '3000:80'
+    networks:
+      - frontend
   coord:
     build:
       context: .
@@ -9,6 +21,7 @@ services:
     ports:
       - '56837:56837'
     networks:
+      - frontend
       - bagel
   worker0:
     build:
@@ -35,5 +48,7 @@ services:
       - bagel
 
 networks:
+  frontend:
+    driver: bridge
   bagel:
     driver: bridge
