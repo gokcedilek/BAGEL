@@ -1,15 +1,19 @@
 package bagel
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"net/rpc"
 	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"strings"
 	"sync"
+
+	"github.com/gorilla/mux"
 )
 
 type CoordConfig struct {
@@ -446,6 +450,19 @@ func (c *Coord) monitor(w WorkerNode) {
 	}
 }
 
+func handleShortestPath(w http.ResponseWriter, r *http.Request) {
+	log.Printf(
+		"coord handled shortest path",
+	)
+	fmt.Fprintf(w, "Welcome to shortest path endpoint!")
+}
+
+func listenClientsREST(clientAPIListenAddr string) {
+	router := mux.NewRouter()
+	router.HandleFunc("/shortestpath", handleShortestPath)
+	log.Fatal(http.ListenAndServe(clientAPIListenAddr, router))
+}
+
 func listenClients(clientAPIListenAddr string) {
 
 	wlisten, err := net.Listen("tcp", clientAPIListenAddr)
@@ -485,7 +502,8 @@ func (c *Coord) Start(
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go listenWorkers(workerAPIListenAddr)
-	go listenClients(clientAPIListenAddr)
+	//go listenClients(clientAPIListenAddr)
+	go listenClientsREST(clientAPIListenAddr)
 	wg.Wait()
 
 	// will never return
