@@ -1,54 +1,54 @@
 version: '3.4'
 services:
-#  client:
-#    build:
-#      context: client
-#      dockerfile: Dockerfile
-#    container_name: client
-#    image: client
-#    volumes:
-#      - ./client/src:/client/src
-#    ports:
-#      - '3000:80'
-#    networks:
-#      - frontend
-  coord:
+  client:
     build:
-      context: .
-      dockerfile: Dockerfile.coord
-    container_name: coord
-    image: coord
+      context: client
+      dockerfile: Dockerfile
+    container_name: client
+    image: client
+    volumes:
+      - ./client/src:/client/src
     ports:
-      - '56837:56837'
-    networks:
-      - frontend
-      - bagel
-  worker0:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: worker0
-    image: worker0
-    depends_on:
-      - coord
-    command: '0'
-    networks:
-      - bagel
-  worker1:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: worker1
-    image: worker1
-    depends_on:
-      - coord
-      - worker0
-    command: '1'
-    networks:
-      - bagel
+      - '3000:80'
+    # networks:
+    #   - frontend
+#   coord:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.coord
+#     container_name: coord
+#     image: coord
+#     ports:
+#       - '56837:56837'
+#     networks:
+#       - frontend
+#       - bagel
+#   worker0:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.worker
+#     container_name: worker0
+#     image: worker0
+#     depends_on:
+#       - coord
+#     command: '0'
+#     networks:
+#       - bagel
+#   worker1:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.worker
+#     container_name: worker1
+#     image: worker1
+#     depends_on:
+#       - coord
+#       - worker0
+#     command: '1'
+#     networks:
+#       - bagel
 
-networks:
-  frontend:
-    driver: bridge
-  bagel:
-    driver: bridge
+# networks:
+#   frontend:
+#     driver: bridge
+#   bagel:
+#     driver: bridge

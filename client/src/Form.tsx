@@ -5,7 +5,8 @@ import React, { useState } from 'react';
 import { CoordClient } from './proto/coord_grpc_web_pb';
 import { Query } from './proto/coord_pb';
 
-const client = new CoordClient('https://localhost:8080', null, null);
+// const client = new CoordClient('https://localhost:8080', null, null);
+const client = new CoordClient('http://localhost:8080', null, null);
 
 const Form = () => {
   const [srcId, setSrcId] = useState('');
@@ -22,11 +23,10 @@ const Form = () => {
     // } catch (e) {
     //   console.log('error: ', e);
     // }
-    const query = new Query(['testClientId', 'test', [1, 2, 3], 'test']);
+    const query = new Query(['testId', 'test', [1, 2, 3], 'test']);
     client.startQuery(query, null, (err, response) => {
-      console.log('err: ', err);
-      const res = response.toObject();
-      console.log('res: ', res);
+      if (err) return console.log('err: ', err);
+      console.log('response: ', response);
     });
     /*
     {

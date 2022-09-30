@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	coord "project/bagel/proto/coord"
-	"time"
 
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"google.golang.org/grpc"
@@ -56,19 +55,19 @@ func (s *Server) StartQuery(ctx context.Context, q *coord.Query) (
 	return &coord.QueryResult{
 		Query:  q,
 		Result: nil,
-		Error:  "no error!",
+		Error:  "no error!!",
 	}, nil
 }
 
 func main() {
 
-	apiServer, err := GenerateTLSApi(
-		"../../../cert/server.crt",
-		"../../../cert/server.key",
-	)
-	if err != nil {
-		log.Fatalf("Error while generating TLS API: %v", err)
-	}
+	//apiServer, err := GenerateTLSApi(
+	//	"../../../cert/server.crt",
+	//	"../../../cert/server.key",
+	//)
+	//if err != nil {
+	//	log.Fatalf("Error while generating TLS API: %v", err)
+	//}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:9090")
 
@@ -76,41 +75,48 @@ func main() {
 		log.Fatalf("Error while listening : %v", err)
 	}
 
-	//s := grpc.NewServer()
-	//coord.RegisterCoordServer(s, &Server{})
-	coord.RegisterCoordServer(apiServer, &Server{})
+	s := grpc.NewServer()
+	coord.RegisterCoordServer(s, &Server{})
+	//coord.RegisterCoordServer(apiServer, &Server{})
 
-	go func() {
-		if err := apiServer.Serve(lis); err != nil {
-			log.Fatalf("Error while serving : %v", err)
-		}
-	}()
+	//go func() {
 	//if err := apiServer.Serve(lis); err != nil {
 	//	log.Fatalf("Error while serving : %v", err)
 	//}
-
-	grpcWebServer := grpcweb.WrapServer(apiServer)
-
-	multiplex := grpcMultiplexer{grpcWebServer}
-
-	router := http.NewServeMux()
-
-	webapp := http.FileServer(http.Dir("../../../../client/build"))
-
-	router.Handle("/", multiplex.Handler(webapp))
-
-	srv := &http.Server{
-		Addr:         "localhost:8080",
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+	//}()
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("Error while serving : %v", err)
 	}
 
-	log.Fatal(
-		srv.ListenAndServeTLS(
-			"../../../cert/server.crt",
-			"../../../cert/server.key",
-		),
-	)
+	//grpcWebServer := grpcweb.WrapServer(apiServer)
+	//
+	//multiplex := grpcMultiplexer{grpcWebServer}
+	//
+	//router := http.NewServeMux()
+	//
+	////webapp := http.FileServer(http.Dir("../../../../client/build"))
+	//webapp := http.FileServer(http.Dir("https://bagel-client-build.s3.us-west-2.amazonaws.com/build/"))
+	//
+	//router.Handle("/", multiplex.Handler(webapp))
+	//
+	//log.Printf("serving 1")
+	//
+	//// http.Handle("/", http.StripPrefix("/static/", http.FileServer(http.Dir("./public"))))
+	//
+	//srv := &http.Server{
+	//	Addr:         "localhost:8080",
+	//	Handler:      router,
+	//	ReadTimeout:  15 * time.Second,
+	//	WriteTimeout: 15 * time.Second,
+	//}
+	//
+	//log.Printf("serving 2")
+
+	//log.Fatal(
+	//	srv.ListenAndServeTLS(
+	//		"../../../cert/server.crt",
+	//		"../../../cert/server.key",
+	//	),
+	//)
 
 }
