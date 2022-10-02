@@ -158,6 +158,7 @@ func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *interface{},
 ) error {
 
+	log.Printf("StartQuery: startSuperStep: %v\n", startSuperStep)
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
@@ -344,113 +345,113 @@ func (w *Worker) Start() error {
 func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
+	log.Printf("ComputeVertices: worker: %v, args: %v\n", w, args)
 
-	/*
-		// save the checkpoint before running superstep S
-		if args.IsCheckpoint && !args.IsRestart {
-			w.workerMutex.Lock()
-			checkpoint := w.checkpoint(args.SuperStepNum)
-			_, err := w.storeCheckpoint(checkpoint)
-			util.CheckErr(
-				err,
-				"ComputeVertices: worker %v failed to checkpoint # %v\n",
-				w.config.WorkerId,
+	// save the checkpoint before running superstep S
+	if args.IsCheckpoint && !args.IsRestart {
+		w.workerMutex.Lock()
+		checkpoint := w.checkpoint(args.SuperStepNum)
+		_, err := w.storeCheckpoint(checkpoint)
+		util.CheckErr(
+			err,
+			"ComputeVertices: worker %v failed to checkpoint # %v\n",
+			w.config.WorkerId,
+			args.SuperStepNum,
+		)
+		log.Printf(
+			"ComputeVertices: worker %v saved checkpoint at"+
+				" superstep %v\n", w.config.WorkerId, args.SuperStepNum,
+		)
+		w.workerMutex.Unlock()
+	}
+
+	err := w.switchToNextSuperStep()
+	if err != nil {
+		log.Printf(
+			"ComputeVertices: worker %v could not switch to superstep"+
+				" %v",
+			w.config.WorkerId, args.SuperStepNum,
+		)
+	}
+
+	hasActiveVertex := false
+	for _, vertex := range w.Vertices {
+		vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
+		if len(vertex.Messages) > 0 {
+			messages := vertex.Compute(w.Query.QueryType)
+			w.mapMessagesToWorkers(messages)
+			if vertex.IsActive {
+				hasActiveVertex = true
+			}
+		}
+
+		vertexType := PAGE_RANK
+		if w.Query.QueryType == SHORTEST_PATH {
+			vertexType = SHORTEST_PATH_DEST
+		}
+
+		// if the current vertex is the source vertex, capture its value
+		if IsTargetVertex(vertex.Id, w.Query.Nodes, vertexType) {
+			log.Printf(
+				"ComputeVertices: target vertex %v is on"+
+					" worker %v with value %v at superstep %v\n",
+				vertex.Id, w.config.WorkerId, vertex.CurrentValue,
 				args.SuperStepNum,
 			)
-			log.Printf(
-				"ComputeVertices: worker %v saved checkpoint at"+
-					" superstep %v\n", w.config.WorkerId, args.SuperStepNum,
-			)
-			w.workerMutex.Unlock()
+			resp.CurrentValue = vertex.CurrentValue
 		}
+	}
 
-		err := w.switchToNextSuperStep()
-		if err != nil {
-			log.Printf(
-				"ComputeVertices: worker %v could not switch to superstep"+
-					" %v",
-				w.config.WorkerId, args.SuperStepNum,
-			)
-		}
-
-		hasActiveVertex := false
-		for _, vertex := range w.Vertices {
-			vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
-			if len(vertex.Messages) > 0 {
-				messages := vertex.Compute(w.Query.QueryType)
-				w.mapMessagesToWorkers(messages)
-				if vertex.IsActive {
-					hasActiveVertex = true
-				}
-			}
-
-			vertexType := PAGE_RANK
-			if w.Query.QueryType == SHORTEST_PATH {
-				vertexType = SHORTEST_PATH_DEST
-			}
-
-			// if the current vertex is the source vertex, capture its value
-			if IsTargetVertex(vertex.Id, w.Query.Nodes, vertexType) {
-				log.Printf(
-					"ComputeVertices: target vertex %v is on"+
-						" worker %v with value %v at superstep %v\n",
-					vertex.Id, w.config.WorkerId, vertex.CurrentValue,
-					args.SuperStepNum,
+	for worker, msgs := range w.SuperStep.Outgoing {
+		if worker == w.config.WorkerId {
+			w.workerMutex.Lock()
+			for _, msg := range msgs {
+				w.NextSuperStep.Messages[msg.DestVertexId] = append(
+					w.NextSuperStep.Messages[msg.DestVertexId], msg,
 				)
-				resp.CurrentValue = vertex.CurrentValue
 			}
+			w.workerMutex.Unlock()
+			continue
 		}
 
-		for worker, msgs := range w.SuperStep.Outgoing {
-			if worker == w.config.WorkerId {
-				w.workerMutex.Lock()
-				for _, msg := range msgs {
-					w.NextSuperStep.Messages[msg.DestVertexId] = append(
-						w.NextSuperStep.Messages[msg.DestVertexId], msg,
-					)
-				}
-				w.workerMutex.Unlock()
-				continue
-			}
+		batch := BatchedMessages{Batch: msgs}
 
-			batch := BatchedMessages{Batch: msgs}
+		if _, exists := w.workerCallBook[worker]; !exists {
+			var err error
+			w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
 
-			if _, exists := w.workerCallBook[worker]; !exists {
-				var err error
-				w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
-
-				if err != nil {
-					log.Printf(
-						"ComputeVertices: worker %v could not establish"+
-							" connection to destination worker %v at addr %v\n",
-						w.config.WorkerId, worker, w.workerDirectory[worker],
-					)
-					continue
-				}
-			}
-
-			var unused Message
-			err := w.workerCallBook[worker].Call(
-				"Worker.PutBatchedMessages", batch, &unused,
-			)
 			if err != nil {
 				log.Printf(
-					"ComputeVertices: worker %v could not send messages"+
-						" to worker: %v\n",
-					w.config.WorkerId, worker,
+					"ComputeVertices: worker %v could not establish"+
+						" connection to destination worker %v at addr %v\n",
+					w.config.WorkerId, worker, w.workerDirectory[worker],
 				)
+				continue
 			}
-			log.Printf(
-				"ComputeVertices: worker #%v sending %v messages\n",
-				w.config.WorkerId,
-				len(batch.Batch),
-			)
 		}
 
-		resp.SuperStepNum = args.SuperStepNum
-		resp.IsCheckpoint = args.IsCheckpoint
-		resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
-	*/
+		var unused Message
+		err := w.workerCallBook[worker].Call(
+			"Worker.PutBatchedMessages", batch, &unused,
+		)
+		if err != nil {
+			log.Printf(
+				"ComputeVertices: worker %v could not send messages"+
+					" to worker: %v\n",
+				w.config.WorkerId, worker,
+			)
+		}
+		log.Printf(
+			"ComputeVertices: worker #%v sending %v messages\n",
+			w.config.WorkerId,
+			len(batch.Batch),
+		)
+	}
+
+	resp.SuperStepNum = args.SuperStepNum
+	resp.IsCheckpoint = args.IsCheckpoint
+	resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
+
 	return nil
 }
 

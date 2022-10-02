@@ -14,13 +14,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-/* proto config */
-//type CoordgRPCServer struct {
-//	coordgRPC.UnimplementedCoordServer
-//	coord Coord
-//}
-
-//func (c *CoordgRPCServer) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	*coordgRPC.QueryResult,
 	error,
@@ -74,11 +67,11 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 		Graph:     q.Graph,
 	}
 
-	//startSuperStep := StartSuperStep{
-	//	NumWorkers:      uint8(len(c.queryWorkers)),
-	//	WorkerDirectory: c.queryWorkersDirectory,
-	//	Query:           coordQuery,
-	//}
+	startSuperStep := StartSuperStep{
+		NumWorkers:      uint8(len(c.queryWorkers)),
+		WorkerDirectory: c.queryWorkersDirectory,
+		Query:           coordQuery,
+	}
 
 	numWorkers := len(c.queryWorkers)
 	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
@@ -97,25 +90,25 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	log.Printf("is coord server defined? %v\n", c)
 
 	// call workers start query handlers
-	//for _, wClient := range c.queryWorkers {
-	//	var result interface{}
-	//	wClient.Go(
-	//		"Worker.StartQuery", startSuperStep, &result,
-	//		c.workerDoneStart,
-	//	)
-	//}
-	//
-	//go c.blockWorkersReady(
-	//	len(c.queryWorkers),
-	//	c.workerDoneStart,
-	//)
+	for _, wClient := range c.queryWorkers {
+		var result interface{}
+		wClient.Go(
+			"Worker.StartQuery", startSuperStep, &result,
+			c.workerDoneStart,
+		)
+	}
+
+	go c.blockWorkersReady(
+		len(c.queryWorkers),
+		c.workerDoneStart,
+	)
 
 	// start query computation
-	//result, err := c.coord.Compute() // TODO
-	//if err != nil {
-	//	log.Printf("StartQuery: Compute returned error: %v\n", err)
-	//}
-	//log.Printf("StartQuert: computed result: %v\n", result)
+	result, err := c.Compute() // TODO
+	if err != nil {
+		log.Printf("StartQuery: Compute returned error: %v\n", err)
+	}
+	log.Printf("StartQuery: computed result: %v\n", result)
 
 	reply.Query = q
 	//reply.Result = result
@@ -182,23 +175,6 @@ func NewCoord() *Coord {
 		UnimplementedCoordServer: coordgRPC.UnimplementedCoordServer{},
 	}
 }
-
-//func NewCoord() *CoordgRPCServer {
-//
-//	return &CoordgRPCServer{
-//		UnimplementedCoordServer: coordgRPC.UnimplementedCoordServer{},
-//		coord: Coord{
-//			clientAPIListenAddr:   "",
-//			workerAPIListenAddr:   "",
-//			lostMsgsThresh:        0,
-//			lastWorkerCheckpoints: make(map[uint32]uint64),
-//			workers:               make(map[uint32]*rpc.Client),
-//			queryWorkers:          make(WorkerCallBook),
-//			queryWorkersDirectory: make(WorkerDirectory),
-//			superStepNumber:       1,
-//		},
-//	}
-//}
 
 // this is the start of the query where coord notifies workers to initialize
 // state for SuperStep 0
@@ -637,8 +613,6 @@ func (c *Coord) listenClientsgRPC(clientAPIListenAddr string) {
 	//
 	//}
 	s := grpc.NewServer()
-	//coordgRPC.RegisterCoordServer(s, &CoordgRPCServer{})
-	//coordgRPC.RegisterCoordServer(s, &Coord{})
 	coordgRPC.RegisterCoordServer(s, c)
 
 	if err := s.Serve(lis); err != nil {
