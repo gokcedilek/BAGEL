@@ -23,7 +23,7 @@ const Form = () => {
     // } catch (e) {
     //   console.log('error: ', e);
     // }
-    const query = new Query(['testId', 'test', [1, 2, 3], 'test']);
+    const query = new Query(['testId', 'test', [1, 2, 4], 'test']);
     client.startQuery(query, null, (err, response) => {
       if (err) return console.log('err: ', err);
       console.log('response: ', response);

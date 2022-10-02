@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net"
-	"net/http"
 	coord "project/bagel/proto/coord"
 
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
@@ -29,17 +28,17 @@ func GenerateTLSApi(pemPath, keyPath string) (*grpc.Server, error) {
 }
 
 // Handler is used to route requests to either grpc or to regular http
-func (m *grpcMultiplexer) Handler(next http.Handler) http.Handler {
-	return http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			if m.IsGrpcWebRequest(r) {
-				m.ServeHTTP(w, r)
-				return
-			}
-			next.ServeHTTP(w, r)
-		},
-	)
-}
+//func (m *grpcMultiplexer) Handler(next http.Handler) http.Handler {
+//	return http.HandlerFunc(
+//		func(w http.ResponseWriter, r *http.Request) {
+//			if m.IsGrpcWebRequest(r) {
+//				m.ServeHTTP(w, r)
+//				return
+//			}
+//			next.ServeHTTP(w, r)
+//		},
+//	)
+//}
 
 // Server is the Logic handler for the server
 // It has to fullfill the GRPC schema generated Interface
@@ -113,7 +112,7 @@ func main() {
 	//log.Printf("serving 2")
 
 	//log.Fatal(
-	//	srv.ListenAndServeTLS(
+	//	apiServer.ListenAndServeTLS(
 	//		"../../../cert/server.crt",
 	//		"../../../cert/server.key",
 	//	),
