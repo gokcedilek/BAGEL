@@ -18,6 +18,7 @@ message QueryResult {
 }
 
 service Coord {
+  // TODO: DO WE need to add coord fields here?
   rpc StartQuery(Query) returns (QueryResult) {};
 }
 
