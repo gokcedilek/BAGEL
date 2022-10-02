@@ -18,6 +18,9 @@ message QueryResult {
 }
 
 service Coord {
+//  string clientAPIListenAddr = 1;
+//  string workerAPIListenAddr   string
+//  uint8 lostMsgsThresh  = 3;
   // TODO: DO WE need to add coord fields here?
   rpc StartQuery(Query) returns (QueryResult) {};
 }

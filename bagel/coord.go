@@ -15,10 +15,10 @@ import (
 )
 
 /* proto config */
-type CoordgRPCServer struct {
-	coordgRPC.UnimplementedCoordServer
-	coord Coord
-}
+//type CoordgRPCServer struct {
+//	coordgRPC.UnimplementedCoordServer
+//	coord Coord
+//}
 
 //func (c *CoordgRPCServer) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
@@ -74,11 +74,11 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 		Graph:     q.Graph,
 	}
 
-	startSuperStep := StartSuperStep{
-		NumWorkers:      uint8(len(c.queryWorkers)),
-		WorkerDirectory: c.queryWorkersDirectory,
-		Query:           coordQuery,
-	}
+	//startSuperStep := StartSuperStep{
+	//	NumWorkers:      uint8(len(c.queryWorkers)),
+	//	WorkerDirectory: c.queryWorkersDirectory,
+	//	Query:           coordQuery,
+	//}
 
 	numWorkers := len(c.queryWorkers)
 	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
@@ -97,18 +97,18 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	log.Printf("is coord server defined? %v\n", c)
 
 	// call workers start query handlers
-	for _, wClient := range c.queryWorkers {
-		var result interface{}
-		wClient.Go(
-			"Worker.StartQuery", startSuperStep, &result,
-			c.workerDoneStart,
-		)
-	}
-
-	go c.blockWorkersReady(
-		len(c.queryWorkers),
-		c.workerDoneStart,
-	)
+	//for _, wClient := range c.queryWorkers {
+	//	var result interface{}
+	//	wClient.Go(
+	//		"Worker.StartQuery", startSuperStep, &result,
+	//		c.workerDoneStart,
+	//	)
+	//}
+	//
+	//go c.blockWorkersReady(
+	//	len(c.queryWorkers),
+	//	c.workerDoneStart,
+	//)
 
 	// start query computation
 	//result, err := c.coord.Compute() // TODO
@@ -126,13 +126,6 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	// return nil for no errors
 	return &reply, nil
-	// test
-	//log.Printf("is coord server defined? %v\n", c.coord)
-	//return &coordgRPC.QueryResult{
-	//	Query:  q,
-	//	Result: nil,
-	//	Error:  "no error!!",
-	//}, nil
 }
 
 /* end of proto config */
@@ -468,7 +461,6 @@ func (c *Coord) restartCheckpoint() {
 
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	log.Printf("JoinWorker: Adding worker %d\n", w.WorkerId)
-	log.Printf("JoinWorker: workers: %v\n", c.workers)
 
 	client, err := util.DialRPC(w.WorkerListenAddr)
 	if err != nil {
@@ -539,6 +531,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 	)
 
 	log.Printf("JoinWorker: coord: %v\n", c)
+	log.Printf("JoinWorker: workers: %v\n", c.workers)
 
 	// return nil for no errors
 	return nil
@@ -630,7 +623,7 @@ func (c *Coord) monitor(w WorkerNode) {
 //	}
 //}
 
-func listenClientsgRPC(clientAPIListenAddr string) {
+func (c *Coord) listenClientsgRPC(clientAPIListenAddr string) {
 	lis, err := net.Listen("tcp", clientAPIListenAddr)
 	if err != nil {
 		log.Printf("listenClients: Error listening: %v\n", err)
@@ -644,8 +637,9 @@ func listenClientsgRPC(clientAPIListenAddr string) {
 	//
 	//}
 	s := grpc.NewServer()
-	coordgRPC.RegisterCoordServer(s, &CoordgRPCServer{})
-	//coord.RegisterCoordServer(s, &Coord{})
+	//coordgRPC.RegisterCoordServer(s, &CoordgRPCServer{})
+	//coordgRPC.RegisterCoordServer(s, &Coord{})
+	coordgRPC.RegisterCoordServer(s, c)
 
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("listenClients: Error while serving : %v", err)
@@ -664,10 +658,6 @@ func (c *Coord) Start(
 	c.lostMsgsThresh = lostMsgsThresh
 	c.checkpointFrequency = checkpointSteps
 
-	// test
-	c.workers = map[uint32]*rpc.Client{1: nil, 2: nil}
-	log.Printf("Start: workers: %v\n", c.workers)
-
 	err := rpc.Register(c)
 	log.Printf("error: %v\n", err)
 	util.CheckErr(err, "Coord could not register RPCs")
@@ -675,9 +665,7 @@ func (c *Coord) Start(
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go listenWorkers(workerAPIListenAddr)
-	//go listenClients(clientAPIListenAddr)
-	//go listenClientsREST(clientAPIListenAddr)
-	go listenClientsgRPC(clientAPIListenAddr)
+	go c.listenClientsgRPC(clientAPIListenAddr)
 	wg.Wait()
 
 	// will never return

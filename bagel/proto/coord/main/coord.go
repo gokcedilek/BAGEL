@@ -44,7 +44,7 @@ func GenerateTLSApi(pemPath, keyPath string) (*grpc.Server, error) {
 // It has to fullfill the GRPC schema generated Interface
 // In this case its only 1 function called Ping
 type Server struct {
-	coord.UnimplementedCoordServer
+	//coord.UnimplementedCoordServer
 }
 
 func (s *Server) StartQuery(ctx context.Context, q *coord.Query) (

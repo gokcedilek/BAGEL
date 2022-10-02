@@ -321,7 +321,7 @@ func (w *Worker) Start() error {
 	}
 
 	var response WorkerNode
-	err = coordClient.Call("CoordgRPCServer.JoinWorker", workerNode, &response)
+	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
 	util.CheckErr(
 		err, "Start: Worker %v could not join with error: %v\n",
 		w.config.WorkerId, err,
