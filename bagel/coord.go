@@ -10,8 +10,10 @@ import (
 	"project/util"
 	"sync"
 
+	"github.com/golang/protobuf/ptypes/wrappers"
 	//"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
@@ -111,8 +113,23 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	log.Printf("StartQuery: computed result: %v\n", result)
 
 	reply.Query = q
-	//reply.Result = result
-	reply.Result = nil // TODO: fix
+
+	// create result object in gRPC proto format
+
+	// idea: add function to convert result to float[] so client always knows
+	//its a float[]
+
+	// TODO: use reflect to infer the type at runtime
+	resultWrapper := &wrappers.Int64Value{Value: 10}
+	any, err := anypb.New(resultWrapper)
+	if err != nil {
+		log.Printf("StartQuery: anypb error: %v\n", err)
+	}
+
+	log.Printf("StartQuery: any result: %v\n", any)
+
+	reply.Result = any // TODO: fix
+	log.Printf("StartQuery: sending back result: %v\n", reply.Result)
 
 	c.queryWorkers = nil
 	c.query = Query{}
