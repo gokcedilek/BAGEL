@@ -1,8 +1,5 @@
 syntax = "proto3";
 package coord;
-option go_package="./main";
-
-import "google/protobuf/any.proto";
 
 message Query {
   string ClientId = 1;

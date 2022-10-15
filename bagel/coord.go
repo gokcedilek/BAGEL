@@ -16,6 +16,10 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
+//func createClientResult(result interface{}, queryType string) float64[] {
+//
+//}
+
 func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	*coordgRPC.QueryResult,
 	error,
@@ -116,8 +120,8 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	// create result object in gRPC proto format
 
-	// idea: add function to convert result to float[] so client always knows
-	//its a float[]
+	// idea: add function to convert result interface{} to float[] so client
+	//always knows its a float[]
 
 	// TODO: use reflect to infer the type at runtime
 	resultWrapper := &wrappers.Int64Value{Value: 10}

@@ -129,7 +129,8 @@ func AssignToRemote(coordServer string, clientServer string) error {
 			fmt.Sprintf(
 				"invalid coordinator or client address supplied; available servers: %v\n",
 				getServerNames(config),
-			))
+			),
+		)
 	}
 
 	workerServers := getWorkerServers(coordServer, clientServer, config)
@@ -147,8 +148,12 @@ func AssignToRemote(coordServer string, clientServer string) error {
 			if err != nil {
 				return err
 			}
-			serverAssignments = append(serverAssignments,
-				getAzureServerAssignmentMsg(filename, coordServer, config[coordServer].(string)))
+			serverAssignments = append(
+				serverAssignments,
+				getAzureServerAssignmentMsg(
+					filename, coordServer, config[coordServer].(string),
+				),
+			)
 		}
 
 		if isConfigType(filename, WORKERS) {
@@ -160,26 +165,40 @@ func AssignToRemote(coordServer string, clientServer string) error {
 			}
 			delete(workerServers, serverName)
 			if serverName == "" {
-				log.Printf("ReassignWorkerHost - ran out of available servers %s\n", filename)
+				log.Printf(
+					"ReassignWorkerHost - ran out of available servers %s\n",
+					filename,
+				)
 				log.Printf("Remote Server Assignments\n%v\n", serverAssignments)
 				return nil
 			}
 
-			err = reassignWorkerHosts(filename, serverAddr, config[coordServer].(string))
+			err = reassignWorkerHosts(
+				filename, serverAddr, config[coordServer].(string),
+			)
 			if err != nil {
 				return err
 			}
-			serverAssignments = append(serverAssignments,
-				getAzureServerAssignmentMsg(filename, serverName, serverAddr))
+			serverAssignments = append(
+				serverAssignments,
+				getAzureServerAssignmentMsg(filename, serverName, serverAddr),
+			)
 		}
 
 		if isConfigType(filename, CLIENT) {
-			err = reassignClientHost(filename, config[clientServer].(string), config[coordServer].(string))
+			err = reassignClientHost(
+				filename, config[clientServer].(string),
+				config[coordServer].(string),
+			)
 			if err != nil {
 				return err
 			}
-			serverAssignments = append(serverAssignments,
-				getAzureServerAssignmentMsg(filename, clientServer, config[clientServer].(string)))
+			serverAssignments = append(
+				serverAssignments,
+				getAzureServerAssignmentMsg(
+					filename, clientServer, config[clientServer].(string),
+				),
+			)
 		}
 	}
 
@@ -187,8 +206,12 @@ func AssignToRemote(coordServer string, clientServer string) error {
 	return nil
 }
 
-func getAzureServerAssignmentMsg(nodeType string, serverName string, serverAddr string) string {
-	return fmt.Sprintf("%s assigned to server %s : %s\n", nodeType, serverName, serverAddr)
+func getAzureServerAssignmentMsg(
+	nodeType string, serverName string, serverAddr string,
+) string {
+	return fmt.Sprintf(
+		"%s assigned to server %s : %s\n", nodeType, serverName, serverAddr,
+	)
 }
 
 func SetPort(ipPort string, port int) string {
@@ -204,7 +227,9 @@ func SetPort(ipPort string, port int) string {
 func IPEmptyPortOnly(hostport string) string {
 	_, port, err := net.SplitHostPort(hostport)
 	if err != nil {
-		log.Fatalf("IPEmptyPortOnly - Failed to separate host and port %v\\n", err)
+		log.Fatalf(
+			"IPEmptyPortOnly - Failed to separate host and port %v\\n", err,
+		)
 		return ""
 	}
 	return fmt.Sprintf(":%s", port)
@@ -238,7 +263,9 @@ func getUnassignedPortNumber(assignedPorts map[int]bool) int {
 	}
 }
 
-func getWorkerServers(coordServer string, clientServer string, serverMap map[string]interface{}) map[string]string {
+func getWorkerServers(
+	coordServer string, clientServer string, serverMap map[string]interface{},
+) map[string]string {
 	availableServers := make(map[string]string)
 	for server, address := range serverMap {
 		if server != coordServer && server != clientServer {
@@ -362,3 +389,8 @@ func reassignWorkerHosts(filename string, host string, coordHost string) error {
 	worker.FCheckAckLocalAddress = SetHost(worker.FCheckAckLocalAddress, host)
 	return WriteJSONConfig(getConfigPath(filename), worker)
 }
+
+//// update ports for Docker vs local
+//func UpdateToDockerAddrs() {
+//
+//}

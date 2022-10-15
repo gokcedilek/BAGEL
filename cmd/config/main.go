@@ -8,7 +8,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("usage: ./bin/cnf [sync|port|azure]")
+		fmt.Println("usage: ./bin/cnf [sync|port|azure|update]")
 		fmt.Println("example ./bin/cnf sync")
 		return
 	}
@@ -33,5 +33,12 @@ func main() {
 		fmt.Println("example ./bin/cnf sync")
 		fmt.Println("example ./bin/cnf azure Lulu Anvil")
 	}
+	//else if os.Args[1] == "update" && len(os.Args) == 3 && os.
+	//	Args[2] == "docker" {
+	//	err := util.UpdateToDockerAddrs();
+	//} else if os.Args[1] == "update" && len(os.Args) == 3 && os.
+	//	Args[2] == "local" {
+	//
+	//}
 
 }

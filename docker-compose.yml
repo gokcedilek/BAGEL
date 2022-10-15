@@ -21,34 +21,34 @@ services:
      ports:
        - '56837:56837'
      networks:
-       - frontend
+#       - frontend
        - bagel
-#   worker0:
-#     build:
-#       context: .
-#       dockerfile: Dockerfile.worker
-#     container_name: worker0
-#     image: worker0
-#     depends_on:
-#       - coord
-#     command: '0'
-#     networks:
-#       - bagel
-#   worker1:
-#     build:
-#       context: .
-#       dockerfile: Dockerfile.worker
-#     container_name: worker1
-#     image: worker1
-#     depends_on:
-#       - coord
-#       - worker0
-#     command: '1'
-#     networks:
-#       - bagel
+   worker0:
+     build:
+       context: .
+       dockerfile: Dockerfile.worker
+     container_name: worker0
+     image: worker0
+     depends_on:
+       - coord
+     command: '0'
+     networks:
+       - bagel
+   worker1:
+     build:
+       context: .
+       dockerfile: Dockerfile.worker
+     container_name: worker1
+     image: worker1
+     depends_on:
+       - coord
+       - worker0
+     command: '1'
+     networks:
+       - bagel
 
 networks:
- frontend:
-   driver: bridge
+# frontend:
+#   driver: bridge
  bagel:
    driver: bridge
