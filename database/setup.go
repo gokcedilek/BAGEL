@@ -23,7 +23,7 @@ func createTable(context context.Context, svc *dynamodb.Client, tableDefinition 
 	fmt.Println("Successfully created database", out)
 }
 
-func CreateBagelTable(context context.Context, svc *dynamodb.Client) {
+func CreateTable(context context.Context, svc *dynamodb.Client, tableName string) {
 	bagelDefinition := &dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
@@ -37,7 +37,7 @@ func CreateBagelTable(context context.Context, svc *dynamodb.Client) {
 				KeyType:       types.KeyTypeHash,
 			},
 		},
-		TableName:   aws.String(CENTRAL_DB_NAME),
+		TableName:   aws.String(tableName),
 		BillingMode: types.BillingModePayPerRequest,
 	}
 
@@ -45,9 +45,10 @@ func CreateBagelTable(context context.Context, svc *dynamodb.Client) {
 	waitForTable(context, svc, CENTRAL_DB_NAME)
 }
 
-func AddGoogleGraphBagel(filePath string, svc *dynamodb.Client) {
+func AddGraph(svc *dynamodb.Client, filePath string, tableName string) {
 	vertices := parseInputGraph(filePath)
-	BatchInsertVertices(svc, CENTRAL_DB_NAME, vertices)
+	batches := CreateBatches(vertices)
+	BatchInsertVertices(svc, tableName, batches)
 }
 
 func waitForTable(ctx context.Context, db *dynamodb.Client, tn string) error {

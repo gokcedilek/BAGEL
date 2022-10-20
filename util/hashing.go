@@ -5,13 +5,13 @@ import (
 	"hash/fnv"
 )
 
-func HashId(vertexId uint64) int64 {
+func HashId(vertexId uint64) uint64 {
 	inputBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(inputBytes, vertexId)
 
 	algorithm := fnv.New64a()
 	algorithm.Write(inputBytes)
-	return int64(algorithm.Sum64())
+	return uint64(algorithm.Sum64())
 }
 
 func GetFlooredModulo(a int64, b int64) int64 {

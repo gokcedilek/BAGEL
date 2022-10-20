@@ -103,8 +103,13 @@ func NewSuperStep() *SuperStep {
 
 func (w *Worker) retrieveVertices(numWorkers uint8) {
 	w.Vertices = make(map[uint64]*Vertex)
-	vertices, err := database.GetVerticesModulo(
-		w.config.WorkerId, numWorkers,
+	svc := database.GetDynamoClient()
+	// TODO: talk about logical IDs for workers
+	//		incl. database name inside query
+	vertices, err := database.GetPartitionForWorkerX(svc,
+		database.CENTRAL_DB_NAME,
+		int(numWorkers),
+		int(w.config.WorkerId),
 	)
 	log.Printf(
 		"retrieveVertices: retrieved %v vertices for worker %v from the"+
@@ -124,22 +129,22 @@ func (w *Worker) retrieveVertices(numWorkers uint8) {
 		var pianoVertex Vertex
 		if w.Query.QueryType == SHORTEST_PATH {
 			pianoVertex = *NewShortestPathVertex(
-				v.VertexID, v.Neighbors, math.MaxInt32,
+				v.ID, v.Edges, math.MaxInt32,
 			)
-			if IsTargetVertex(v.VertexID, w.Query.Nodes, SHORTEST_PATH_SOURCE) {
-				initialMessage := Message{INITIALIZATION_VERTEX, v.VertexID, 0}
-				w.NextSuperStep.Messages[v.VertexID] = append(
-					w.NextSuperStep.Messages[v.VertexID], initialMessage,
+			if IsTargetVertex(v.ID, w.Query.Nodes, SHORTEST_PATH_SOURCE) {
+				initialMessage := Message{INITIALIZATION_VERTEX, v.ID, 0}
+				w.NextSuperStep.Messages[v.ID] = append(
+					w.NextSuperStep.Messages[v.ID], initialMessage,
 				)
 			}
 		} else {
-			pianoVertex = *NewPageRankVertex(v.VertexID, v.Neighbors)
-			initialMessage := Message{INITIALIZATION_VERTEX, v.VertexID, 0.85}
-			w.NextSuperStep.Messages[v.VertexID] = append(
-				w.NextSuperStep.Messages[v.VertexID], initialMessage,
+			pianoVertex = *NewPageRankVertex(v.ID, v.Edges)
+			initialMessage := Message{INITIALIZATION_VERTEX, v.ID, 0.85}
+			w.NextSuperStep.Messages[v.ID] = append(
+				w.NextSuperStep.Messages[v.ID], initialMessage,
 			)
 		}
-		w.Vertices[v.VertexID] = &pianoVertex
+		w.Vertices[v.ID] = &pianoVertex
 	}
 	w.workerMutex.Unlock()
 
@@ -483,7 +488,7 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 	w.workerMutex.Lock()
 	for _, msg := range msgs {
 		destWorker := util.GetFlooredModulo(
-			util.HashId(msg.DestVertexId), int64(w.NumWorkers),
+			int64(util.HashId(msg.DestVertexId)), int64(w.NumWorkers),
 		)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(
 			w.SuperStep.Outgoing[uint32(destWorker)], msg,

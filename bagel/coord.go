@@ -80,8 +80,10 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	}
 
 	// validate vertices sent by the client query
+	svc := database.GetDynamoClient()
 	for _, vId := range q.Nodes {
-		_, err := database.GetVertexById(int(vId))
+		// TODO: include db name as part of query
+		_, err := database.GetVertexByID(svc, int64(vId), database.CENTRAL_DB_NAME)
 		if err != nil {
 			reply.Error = err.Error()
 			return nil
