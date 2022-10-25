@@ -23,6 +23,25 @@ func createTable(context context.Context, svc *dynamodb.Client, tableDefinition 
 	fmt.Println("Successfully created database", out)
 }
 
+func CreateTableIfNotExists(svc *dynamodb.Client, tableName string) {
+	tables, _ := svc.ListTables(context.TODO(), &dynamodb.ListTablesInput{})
+
+	tableExists := false
+
+	for _, name := range tables.TableNames {
+		if name == tableName {
+			tableExists = true
+			break
+		}
+	}
+
+	if tableExists {
+		return
+	}
+
+	CreateTable(context.TODO(), svc, tableName)
+}
+
 func CreateTable(context context.Context, svc *dynamodb.Client, tableName string) {
 	bagelDefinition := &dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
@@ -42,7 +61,7 @@ func CreateTable(context context.Context, svc *dynamodb.Client, tableName string
 	}
 
 	createTable(context, svc, bagelDefinition)
-	waitForTable(context, svc, CENTRAL_DB_NAME)
+	waitForTable(context, svc, tableName)
 }
 
 func AddGraph(svc *dynamodb.Client, filePath string, tableName string) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -33,7 +34,9 @@ func GetDynamoClient() *dynamodb.Client {
 		return DB
 	}
 
-	config, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(DEFAULT_REGION))
+	// commented for later; needs to specify if we are connecting to live endpoint..
+	//config, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(DEFAULT_REGION))
+	config, err := getLocalDynamoConfiguration()
 
 	if err != nil {
 		log.Fatalf("unable to load SDK config %v", err)
@@ -41,6 +44,25 @@ func GetDynamoClient() *dynamodb.Client {
 
 	DB = dynamodb.NewFromConfig(config)
 	return DB
+}
+
+func getLocalDynamoConfiguration() (aws.Config, error) {
+	config, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(DEFAULT_REGION),
+		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
+			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+				return aws.Endpoint{URL: "http://localhost:8000"}, nil
+			})),
+		config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
+			Value: aws.Credentials{
+				AccessKeyID:     "local",
+				SecretAccessKey: "local",
+				SessionToken:    "local",
+				Source:          "Hard-coded credentials, irrelvant values for local DynamoDB",
+			},
+		}))
+
+	return config, err
 }
 
 func GetVertexByID(svc *dynamodb.Client, vertexId int64, tableName string) (Vertex, error) {
@@ -66,7 +88,7 @@ func GetVertexByID(svc *dynamodb.Client, vertexId int64, tableName string) (Vert
 
 func GetPartitionForWorkerX(svc *dynamodb.Client, tableName string, partitionNum int, worker int) ([]Vertex, error) {
 	if !IsPartitionCached(svc, tableName, partitionNum) {
-		return nil, fmt.Errorf("partition for %d workers does not exist for %s", partitionNum, tableName)
+		PartitionGraph(svc, tableName, partitionNum)
 	}
 
 	vertices := make([]Vertex, 0)
@@ -145,6 +167,8 @@ func GetAllVertices(svc *dynamodb.Client, tableName string) ([]Vertex, error) {
 func IsPartitionCached(svc *dynamodb.Client, tableName string, numPartition int) bool {
 	limit := int32(1)
 	partitionName := getNumberOfWorkersXName(numPartition)
+
+	fmt.Println("tableName: ", tableName)
 
 	out, err := svc.Scan(context.TODO(), &dynamodb.ScanInput{
 		TableName:        aws.String(tableName),

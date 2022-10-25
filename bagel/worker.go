@@ -101,13 +101,12 @@ func NewSuperStep() *SuperStep {
 	}
 }
 
-func (w *Worker) retrieveVertices(numWorkers uint8) {
+func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
 	w.Vertices = make(map[uint64]*Vertex)
 	svc := database.GetDynamoClient()
 	// TODO: talk about logical IDs for workers
-	//		incl. database name inside query
 	vertices, err := database.GetPartitionForWorkerX(svc,
-		database.CENTRAL_DB_NAME,
+		tableName,
 		int(numWorkers),
 		int(w.config.WorkerId),
 	)
@@ -180,7 +179,7 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	w.retrieveVertices(startSuperStep.NumWorkers)
+	w.retrieveVertices(startSuperStep.NumWorkers, startSuperStep.Query.TableName)
 	return nil
 }
 
@@ -204,7 +203,7 @@ func (w *Worker) RevertToLastCheckpoint(
 				" initial state with %v workers\n",
 			w.config.WorkerId, w.NumWorkers,
 		)
-		w.retrieveVertices(req.NumWorkers)
+		w.retrieveVertices(req.NumWorkers, req.Query.TableName)
 		*reply = req
 		return nil
 	}

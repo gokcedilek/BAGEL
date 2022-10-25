@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"project/database"
+	"project/util"
 )
 
 const (
@@ -24,11 +26,15 @@ func main() {
 	log.SetOutput(mw)
 	log.SetPrefix("Database" + ": ")
 
-	if len(os.Args) != 3 {
+	if len(os.Args) != 4 {
 		log.Printf("Usage: ./bin/database [$1 TABLE_NAME] [$2<PATH_TO_GRAPH.txt>]")
 		return
 	}
 
 	svc := database.GetDynamoClient()
-	database.GetPartitionForWorkerX(svc, BAGEL, 2, 0)
+	if os.Args[1] == SETUP {
+		database.CreateTableIfNotExists(svc, os.Args[2])
+		database.AddGraph(svc, fmt.Sprintf("%s\\testGraph.txt", util.GetProjectRoot()), os.Args[2])
+	}
+
 }

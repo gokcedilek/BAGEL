@@ -83,7 +83,7 @@ func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
 	svc := database.GetDynamoClient()
 	for _, vId := range q.Nodes {
 		// TODO: include db name as part of query
-		_, err := database.GetVertexByID(svc, int64(vId), database.CENTRAL_DB_NAME)
+		_, err := database.GetVertexByID(svc, int64(vId), q.TableName)
 		if err != nil {
 			reply.Error = err.Error()
 			return nil
