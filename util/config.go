@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"path/filepath"
+	"runtime"
 )
 
 func ReadJSONConfig(filename string, config interface{}) error {
@@ -65,4 +67,9 @@ func DialRPC(address string) (*rpc.Client, error) {
 		return nil, err
 	}
 	return rpc.NewClient(conn), err
+}
+
+func GetProjectRoot() string {
+	_, b, _, _ := runtime.Caller(0)
+	return filepath.Dir(filepath.Dir(b))
 }

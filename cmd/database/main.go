@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -9,12 +10,13 @@ import (
 )
 
 const (
-	PROD = "prod"
-	DEV  = "dev"
+	PROD  = "prod"
+	DEV   = "dev"
+	SETUP = "setup"
+	BAGEL = "bagel-test"
 )
 
 func main() {
-
 	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		log.Fatal(err)
@@ -24,26 +26,15 @@ func main() {
 	log.SetOutput(mw)
 	log.SetPrefix("Database" + ": ")
 
-	if len(os.Args) != 2 || os.Args[1] != DEV && os.Args[1] != PROD {
-		log.Printf("Usage: ./bin/database [%s|%s]", PROD, DEV)
-		log.Println("Example: ./bin/database dev")
+	if len(os.Args) != 4 {
+		log.Printf("Usage: ./bin/database [$1 TABLE_NAME] [$2<PATH_TO_GRAPH.txt>]")
 		return
 	}
 
-	var configPath string
-	if os.Args[1] == PROD {
-		configPath = "config/database_config.json"
-	} else {
-		configPath = "config/database_test_config.json"
+	svc := database.GetDynamoClient()
+	if os.Args[1] == SETUP {
+		database.CreateTableIfNotExists(svc, os.Args[2])
+		database.AddGraph(svc, fmt.Sprintf("%s\\testGraph.txt", util.GetProjectRoot()), os.Args[2])
 	}
-
-	var config database.DatabaseConfig
-	err = util.ReadJSONConfig(configPath, &config)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	database.SetupDatabase(config)
 
 }

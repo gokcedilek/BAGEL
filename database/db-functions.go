@@ -1,30 +1,20 @@
 package database
 
+/*
+
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/denisenkom/go-mssqldb"
 	"log"
 	"strconv"
 	"strings"
-	"time"
-
-	_ "github.com/denisenkom/go-mssqldb"
 )
 
 type DBVertexResult struct {
 	VertexID     uint64
 	vertexIDHash int64
 	Neighbors    []uint64
-}
-
-func main() {
-	start := time.Now()
-	n, err := GetVerticesModulo(1, 3)
-	if err != nil {
-		panic(err)
-	}
-	elapsed := time.Since(start)
-	fmt.Printf("Found vertex: %v in %s\n", n, elapsed)
 }
 
 func getDBConnection() (*sql.DB, error) {
@@ -128,3 +118,4 @@ func GetFlooredModuloString(a string, b string) string {
 	modulo_op := "%"
 	return fmt.Sprintf("((%s %s %s) + %s) %s %s", a, modulo_op, b, b, modulo_op, b)
 }
+*/

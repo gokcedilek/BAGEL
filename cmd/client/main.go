@@ -34,10 +34,10 @@ func main() {
 	invalidInput := false
 	var query bagel.Query
 
-	if len(os.Args) < 3 || len(os.Args) > 4 {
+	if len(os.Args) < 4 || len(os.Args) > 5 {
 		invalidInput = true
 	} else if strings.EqualFold(os.Args[1], bagel.PAGE_RANK) {
-		if len(os.Args) != 3 {
+		if len(os.Args) != 4 {
 			invalidInput = true
 		} else {
 			v1, err := strconv.Atoi(os.Args[2])
@@ -47,10 +47,11 @@ func main() {
 			} else {
 				query.QueryType = bagel.PAGE_RANK
 				query.Nodes = []uint64{uint64(v1)}
+				query.TableName = os.Args[3]
 			}
 		}
 	} else if strings.EqualFold(os.Args[1], bagel.SHORTEST_PATH) {
-		if len(os.Args) != 4 {
+		if len(os.Args) != 5 {
 			invalidInput = true
 		} else {
 			v1, err := strconv.Atoi(os.Args[2])
@@ -65,6 +66,7 @@ func main() {
 			} else {
 				query.QueryType = bagel.SHORTEST_PATH
 				query.Nodes = []uint64{uint64(v1), uint64(v2)}
+				query.TableName = os.Args[4]
 			}
 		}
 	} else {
@@ -72,9 +74,9 @@ func main() {
 	}
 
 	if invalidInput {
-		log.Println("Usage: ./bin/client [shortestpath|pagerank] [vertexId] [vertexId]")
-		log.Println("Example: ./bin/client pagerank 11")
-		log.Println("Example: ./bin/client shortestpath 11 54")
+		log.Println("Usage: ./bin/client [shortestpath|pagerank] [vertexId] [vertexId] [tableName]")
+		log.Println("Example: ./bin/client pagerank 11 bagelDb")
+		log.Println("Example: ./bin/client shortestpath 11 54 bagelDB")
 		return
 	}
 
