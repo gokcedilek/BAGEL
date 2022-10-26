@@ -106,6 +106,7 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
         nodesList:
           (f = jspb.Message.getRepeatedField(msg, 3)) == null ? undefined : f,
         graph: jspb.Message.getFieldWithDefault(msg, 4, ''),
+        tablename: jspb.Message.getFieldWithDefault(msg, 5, ''),
       };
 
     if (includeInstance) {
@@ -156,6 +157,10 @@ proto.coord.Query.deserializeBinaryFromReader = function (msg, reader) {
         var value = /** @type {string} */ (reader.readString());
         msg.setGraph(value);
         break;
+      case 5:
+        var value = /** @type {string} */ (reader.readString());
+        msg.setTablename(value);
+        break;
       default:
         reader.skipField();
         break;
@@ -198,6 +203,10 @@ proto.coord.Query.serializeBinaryToWriter = function (message, writer) {
   f = message.getGraph();
   if (f.length > 0) {
     writer.writeString(4, f);
+  }
+  f = message.getTablename();
+  if (f.length > 0) {
+    writer.writeString(5, f);
   }
 };
 
@@ -282,6 +291,22 @@ proto.coord.Query.prototype.getGraph = function () {
  */
 proto.coord.Query.prototype.setGraph = function (value) {
   return jspb.Message.setProto3StringField(this, 4, value);
+};
+
+/**
+ * optional string TableName = 5;
+ * @return {string}
+ */
+proto.coord.Query.prototype.getTablename = function () {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ''));
+};
+
+/**
+ * @param {string} value
+ * @return {!proto.coord.Query} returns this
+ */
+proto.coord.Query.prototype.setTablename = function (value) {
+  return jspb.Message.setProto3StringField(this, 5, value);
 };
 
 if (jspb.Message.GENERATE_TO_OBJECT) {

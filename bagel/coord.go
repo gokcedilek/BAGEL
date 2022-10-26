@@ -38,8 +38,10 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	}
 
 	// validate vertices sent by the client query
+	svc := database.GetDynamoClient()
 	for _, vId := range q.Nodes {
-		_, err := database.GetVertexById(int(vId))
+		// TODO: include db name as part of query
+		_, err := database.GetVertexByID(svc, int64(vId), q.TableName)
 		if err != nil {
 			reply.Error = err.Error()
 			return &reply, nil

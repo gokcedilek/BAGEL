@@ -12,6 +12,7 @@ message Query {
   QUERY_TYPE QueryType = 2;
   repeated uint64 Nodes = 3;
   string Graph = 4;
+  string TableName = 5;
 }
 
 message QueryResult {
