@@ -12,8 +12,7 @@ var jspb = require('google-protobuf');
 var goog = jspb;
 var global = Function('return this')();
 
-var google_protobuf_any_pb = require('google-protobuf/google/protobuf/any_pb.js');
-goog.object.extend(proto, google_protobuf_any_pb);
+goog.exportSymbol('proto.coord.QUERY_TYPE', null, global);
 goog.exportSymbol('proto.coord.Query', null, global);
 goog.exportSymbol('proto.coord.QueryResult', null, global);
 /**
@@ -103,7 +102,7 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
     var f,
       obj = {
         clientid: jspb.Message.getFieldWithDefault(msg, 1, ''),
-        querytype: jspb.Message.getFieldWithDefault(msg, 2, ''),
+        querytype: jspb.Message.getFieldWithDefault(msg, 2, 0),
         nodesList:
           (f = jspb.Message.getRepeatedField(msg, 3)) == null ? undefined : f,
         graph: jspb.Message.getFieldWithDefault(msg, 4, ''),
@@ -146,7 +145,7 @@ proto.coord.Query.deserializeBinaryFromReader = function (msg, reader) {
         msg.setClientid(value);
         break;
       case 2:
-        var value = /** @type {string} */ (reader.readString());
+        var value = /** @type {!proto.coord.QUERY_TYPE} */ (reader.readEnum());
         msg.setQuerytype(value);
         break;
       case 3:
@@ -189,8 +188,8 @@ proto.coord.Query.serializeBinaryToWriter = function (message, writer) {
     writer.writeString(1, f);
   }
   f = message.getQuerytype();
-  if (f.length > 0) {
-    writer.writeString(2, f);
+  if (f !== 0.0) {
+    writer.writeEnum(2, f);
   }
   f = message.getNodesList();
   if (f.length > 0) {
@@ -219,19 +218,21 @@ proto.coord.Query.prototype.setClientid = function (value) {
 };
 
 /**
- * optional string QueryType = 2;
- * @return {string}
+ * optional QUERY_TYPE QueryType = 2;
+ * @return {!proto.coord.QUERY_TYPE}
  */
 proto.coord.Query.prototype.getQuerytype = function () {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ''));
+  return /** @type {!proto.coord.QUERY_TYPE} */ (
+    jspb.Message.getFieldWithDefault(this, 2, 0)
+  );
 };
 
 /**
- * @param {string} value
+ * @param {!proto.coord.QUERY_TYPE} value
  * @return {!proto.coord.Query} returns this
  */
 proto.coord.Query.prototype.setQuerytype = function (value) {
-  return jspb.Message.setProto3StringField(this, 2, value);
+  return jspb.Message.setProto3EnumField(this, 2, value);
 };
 
 /**
@@ -315,9 +316,7 @@ if (jspb.Message.GENERATE_TO_OBJECT) {
         query:
           (f = msg.getQuery()) &&
           proto.coord.Query.toObject(includeInstance, f),
-        result:
-          (f = msg.getResult()) &&
-          google_protobuf_any_pb.Any.toObject(includeInstance, f),
+        result: jspb.Message.getFloatingPointFieldWithDefault(msg, 2, 0.0),
         error: jspb.Message.getFieldWithDefault(msg, 3, ''),
       };
 
@@ -362,11 +361,7 @@ proto.coord.QueryResult.deserializeBinaryFromReader = function (msg, reader) {
         msg.setQuery(value);
         break;
       case 2:
-        var value = new google_protobuf_any_pb.Any();
-        reader.readMessage(
-          value,
-          google_protobuf_any_pb.Any.deserializeBinaryFromReader
-        );
+        var value = /** @type {number} */ (reader.readDouble());
         msg.setResult(value);
         break;
       case 3:
@@ -405,12 +400,8 @@ proto.coord.QueryResult.serializeBinaryToWriter = function (message, writer) {
     writer.writeMessage(1, f, proto.coord.Query.serializeBinaryToWriter);
   }
   f = message.getResult();
-  if (f != null) {
-    writer.writeMessage(
-      2,
-      f,
-      google_protobuf_any_pb.Any.serializeBinaryToWriter
-    );
+  if (f !== 0.0) {
+    writer.writeDouble(2, f);
   }
   f = message.getError();
   if (f.length > 0) {
@@ -453,37 +444,21 @@ proto.coord.QueryResult.prototype.hasQuery = function () {
 };
 
 /**
- * optional google.protobuf.Any Result = 2;
- * @return {?proto.google.protobuf.Any}
+ * optional double Result = 2;
+ * @return {number}
  */
 proto.coord.QueryResult.prototype.getResult = function () {
-  return /** @type{?proto.google.protobuf.Any} */ (
-    jspb.Message.getWrapperField(this, google_protobuf_any_pb.Any, 2)
+  return /** @type {number} */ (
+    jspb.Message.getFloatingPointFieldWithDefault(this, 2, 0.0)
   );
 };
 
 /**
- * @param {?proto.google.protobuf.Any|undefined} value
+ * @param {number} value
  * @return {!proto.coord.QueryResult} returns this
  */
 proto.coord.QueryResult.prototype.setResult = function (value) {
-  return jspb.Message.setWrapperField(this, 2, value);
-};
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.coord.QueryResult} returns this
- */
-proto.coord.QueryResult.prototype.clearResult = function () {
-  return this.setResult(undefined);
-};
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.coord.QueryResult.prototype.hasResult = function () {
-  return jspb.Message.getField(this, 2) != null;
+  return jspb.Message.setProto3FloatField(this, 2, value);
 };
 
 /**
@@ -500,6 +475,14 @@ proto.coord.QueryResult.prototype.getError = function () {
  */
 proto.coord.QueryResult.prototype.setError = function (value) {
   return jspb.Message.setProto3StringField(this, 3, value);
+};
+
+/**
+ * @enum {number}
+ */
+proto.coord.QUERY_TYPE = {
+  PAGE_RANK: 0,
+  SHORTEST_PATH: 1,
 };
 
 // goog.object.extend(exports, proto.coord);

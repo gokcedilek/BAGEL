@@ -52,7 +52,6 @@ type CoordServer interface {
 
 // UnimplementedCoordServer must be embedded to have forward compatible implementations.
 type UnimplementedCoordServer struct {
-	// TODO: DO WE need to add coord fields here?
 }
 
 func (UnimplementedCoordServer) StartQuery(context.Context, *Query) (*QueryResult, error) {

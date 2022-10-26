@@ -346,6 +346,11 @@ func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
 	log.Printf("ComputeVertices: worker: %v, args: %v\n", w, args)
+	log.Printf(
+		"ComputeVertices: queryType == shortestpath: %v, "+
+			"queryType == pagerank: %v\n", w.Query.QueryType == SHORTEST_PATH,
+		w.Query.QueryType == PAGE_RANK,
+	)
 
 	// save the checkpoint before running superstep S
 	if args.IsCheckpoint && !args.IsRestart {

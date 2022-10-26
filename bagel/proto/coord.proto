@@ -1,19 +1,22 @@
 syntax = "proto3";
 package coord;
-option go_package="./main";
+option go_package="./coord/";
 
-import "google/protobuf/any.proto";
+enum QUERY_TYPE {
+  PAGE_RANK   = 0;
+  SHORTEST_PATH  = 1;
+}
 
 message Query {
   string ClientId = 1;
-  string QueryType = 2;
+  QUERY_TYPE QueryType = 2;
   repeated uint64 Nodes = 3;
   string Graph = 4;
 }
 
 message QueryResult {
   Query  Query = 1;
-  google.protobuf.Any Result = 2;
+  double Result = 2;
   string Error = 3;
 }
 

@@ -85,7 +85,8 @@ func writeMessage(msg interface{}, conn *net.UDPConn) error {
 
 func MonitorRoutine(
 	arg StartStruct, readAck chan AckMessage,
-	notifyCh chan FailureDetected, listenConn *net.UDPConn) {
+	notifyCh chan FailureDetected, listenConn *net.UDPConn,
+) {
 
 	// initiate connection on HBeatRemoteIPHBeatRemotePort
 	localAddr, err := net.ResolveUDPAddr("udp", arg.HBeatLocalIPHBeatLocalPort)
@@ -106,7 +107,15 @@ func MonitorRoutine(
 		return
 	}
 
-	log.Printf("fcheck: MonitorRoutine: Beginning to monitor %v from %v\n", arg.HBeatRemoteIPHBeatRemotePort, conn.LocalAddr())
+	//log.Printf(
+	//	"fcheck: MonitorRoutine: Beginning to monitor %v from %v\n",
+	//	arg.HBeatRemoteIPHBeatRemotePort, conn.LocalAddr(),
+	//)
+	log.Printf(
+		"fcheck for server %v: MonitorRoutine: Beginning to monitor %v from"+
+			" %v\n", arg.ServerId,
+		conn.RemoteAddr(), conn.LocalAddr(),
+	)
 
 	lostMsgs := uint8(0)   // number of outstanding heartbeats arent acked within RTT
 	rtt := 3 * time.Second // RTT in microseconds
@@ -123,7 +132,7 @@ func MonitorRoutine(
 	if err != nil {
 		return
 	}
-	//log.Printf("fcheck: MonitorRoutine: Sent first heartbeat: %v\n", hbeatMsg)
+	log.Printf("fcheck: MonitorRoutine: Sent first heartbeat: %v\n", hbeatMsg)
 
 	for {
 		select {
@@ -160,7 +169,9 @@ func MonitorRoutine(
 				if err != nil {
 					return
 				}
-				// log.Printf("fcheck: MonitorRoutine: sent heartbeat: %v\n", hbeatMsg)
+				//log.Printf(
+				//	"fcheck: MonitorRoutine: sent heartbeat: %v\n", hbeatMsg,
+				//)
 			}
 		default:
 			// attempt to receive the ack within RTT
@@ -168,7 +179,9 @@ func MonitorRoutine(
 			rtt = (3 * time.Second)
 			err := conn.SetReadDeadline(time.Now().Add(rtt))
 			if err != nil {
-				log.Printf("fcheck: MonitorRoutine: error with SetReadDeadline: ", err)
+				log.Printf(
+					"fcheck: MonitorRoutine: error with SetReadDeadline: ", err,
+				)
 				time.Sleep(1 * time.Second)
 				continue
 			}
@@ -201,7 +214,9 @@ func MonitorRoutine(
 			var ack AckMessage
 			decoder := gob.NewDecoder(ackBuf)
 			if decodeErr := decoder.Decode(&ack); decodeErr != nil {
-				log.Printf("fcheck: MonitorRoutine: decode error: %v\n", decodeErr)
+				log.Printf(
+					"fcheck: MonitorRoutine: decode error: %v\n", decodeErr,
+				)
 				return
 			}
 			//log.Printf("fcheck: MonitorRoutine: received ack: %v\n", ack)
@@ -256,10 +271,14 @@ func sendShim(b []byte, conn net.Conn) (n int, e error) {
 }
 */
 
-func MonitoredRoutine(readHBeat chan HBeatMessagePayload, conn *net.UDPConn, serverId uint32) {
+func MonitoredRoutine(
+	readHBeat chan HBeatMessagePayload, conn *net.UDPConn, serverId uint32,
+) {
 
 	// create a log file and log to both console and terminal
-	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(
+		"bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -267,7 +286,12 @@ func MonitoredRoutine(readHBeat chan HBeatMessagePayload, conn *net.UDPConn, ser
 	mw := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(mw)
 
-	log.Printf("fcheck: MonitoredRoutine: starting connection to monitor local: %v, remote: %v\n", conn.LocalAddr(), conn.RemoteAddr())
+	log.Printf(
+		"fcheck for server %v: MonitoredRoutine: starting connection"+
+			" to"+
+			" monitor local: %v, remote: %v\n", serverId, conn.LocalAddr(),
+		conn.RemoteAddr(),
+	)
 	for {
 		select {
 		case <-stopMonitored:
@@ -295,19 +319,23 @@ func MonitoredRoutine(readHBeat chan HBeatMessagePayload, conn *net.UDPConn, ser
 			// encode message
 			encoder := gob.NewEncoder(&msgBuf)
 			if encodeErr := encoder.Encode(ack); encodeErr != nil {
-				log.Printf("fcheck: MonitoredRoutine: encode error: %s\n", encodeErr)
+				log.Printf(
+					"fcheck: MonitoredRoutine: encode error: %s\n", encodeErr,
+				)
 				conn.Close()
 				close(readHBeat)
 				return
 			}
 			_, err := conn.WriteToUDP(msgBuf.Bytes(), hBeatPayload.SrcAddr)
 			if err != nil {
-				log.Printf("fcheck: MonitoredRoutine: - UDP write error: %s\n", err)
+				log.Printf(
+					"fcheck: MonitoredRoutine: - UDP write error: %s\n", err,
+				)
 				conn.Close()
 				close(readHBeat)
 				return
 			}
-			// log.Printf("MonitoredRoutine: conn: %v - sent ack: %v\n", conn, ack)
+			//log.Printf("MonitoredRoutine: conn: %v - sent ack: %v\n", conn, ack)
 		default:
 			// receive the hBeat
 			hBeatMsg := make([]byte, 1024)
@@ -331,7 +359,7 @@ func MonitoredRoutine(readHBeat chan HBeatMessagePayload, conn *net.UDPConn, ser
 				HBeat:   hBeat,
 				SrcAddr: srcAddr,
 			}
-			// log.Printf("MonitoredRoutine: received heartbeat: %v\n", hBeat)
+			//log.Printf("MonitoredRoutine: received heartbeat: %v\n", hBeat)
 			// send heartbeat to the channel
 			readHBeat <- hBeatPayload
 		}
@@ -340,10 +368,14 @@ func MonitoredRoutine(readHBeat chan HBeatMessagePayload, conn *net.UDPConn, ser
 
 // Starts the fcheck library.
 
-func Start(arg StartStruct) (notifyCh <-chan FailureDetected, addr string, err error) {
+func Start(arg StartStruct) (
+	notifyCh <-chan FailureDetected, addr string, err error,
+) {
 
 	// create a log file and log to both console and terminal
-	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(
+		"bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644,
+	)
 	if err != nil {
 		log.Print(err)
 	}
@@ -355,19 +387,27 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, addr string, err e
 		// ONLY arg.AckLocalIPAckLocalPort is set
 		//
 		// Start fcheck without monitoring any node, but responding to heartbeats.
-		readHBeat := make(chan HBeatMessagePayload, 1) // heartbeats received by MonitoredRoutine
-		stopMonitored = make(chan bool, 1)             // notify MonitoredRoutine to stop
+		readHBeat := make(
+			chan HBeatMessagePayload, 1,
+		) // heartbeats received by MonitoredRoutine
+		stopMonitored = make(chan bool, 1) // notify MonitoredRoutine to stop
 
 		// attempt to listen on AckLocalIP:AckLocalPort for monitoring servers
 		addr, err := net.ResolveUDPAddr("udp", arg.AckLocalIPAckLocalPort)
 
 		if err != nil {
-			log.Printf("fcheck: Start: (1) Could not resolve UDP address to listen on AckLocalIP:AckLocalPort - error: %v\n", err)
+			log.Printf(
+				"fcheck: Start: (1) Could not resolve UDP address to listen on AckLocalIP:AckLocalPort - error: %v\n",
+				err,
+			)
 			return nil, "", err
 		}
 		conn, err := net.ListenUDP("udp", addr)
 		if err != nil {
-			log.Printf("fcheck: Start: (1) Could not set up listenUDP to listen for heartbeats - error: %v\n", err)
+			log.Printf(
+				"fcheck: Start: (1) Could not set up listenUDP to listen for heartbeats - error: %v\n",
+				err,
+			)
 			conn.Close()
 			return nil, "", err
 		}
@@ -380,22 +420,30 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, addr string, err e
 		// Else: ALL fields in arg are set
 		// Start the fcheck library by monitoring a single node and
 		// also responding to heartbeats.
-		readHBeat := make(chan HBeatMessagePayload, 1) // heartbeats received by MonitoredRoutine
-		readAck := make(chan AckMessage, 1)            // acks received by MonitorRoutine
-		stopMonitored = make(chan bool, 1)             // notify MonitoredRoutine to stop
-		stopMonitor = make(chan bool, 1)               // notify MonitorRoutine to stop
+		readHBeat := make(
+			chan HBeatMessagePayload, 1,
+		) // heartbeats received by MonitoredRoutine
+		readAck := make(chan AckMessage, 1) // acks received by MonitorRoutine
+		stopMonitored = make(chan bool, 1)  // notify MonitoredRoutine to stop
+		stopMonitor = make(chan bool, 1)    // notify MonitorRoutine to stop
 		notifyCh := make(chan FailureDetected, 1)
 
 		// attempt to listen on AckLocalIP:AckLocalPort for monitoring servers
 		addr, err := net.ResolveUDPAddr("udp", arg.AckLocalIPAckLocalPort)
 
 		if err != nil {
-			log.Printf("fcheck: Start: (2) Could not set up listenUDP for AckLocalIP:AckLocalPort - error: %v\n", err)
+			log.Printf(
+				"fcheck: Start: (2) Could not set up listenUDP for AckLocalIP:AckLocalPort - error: %v\n",
+				err,
+			)
 			return notifyCh, "", err
 		}
 		conn, err := net.ListenUDP("udp", addr)
 		if err != nil {
-			log.Printf("fcheck: Start: (2) Could not listenUDP to listen for heartbeats - error: %v\n", err)
+			log.Printf(
+				"fcheck: Start: (2) Could not listenUDP to listen for heartbeats - error: %v\n",
+				err,
+			)
 			conn.Close()
 			return notifyCh, "", err
 		}

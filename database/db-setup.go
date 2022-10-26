@@ -103,8 +103,10 @@ func SetupDatabase(config DatabaseConfig) {
 
 func initializeDB() {
 	// Build connection string
-	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;",
-		server, user, password, port, database)
+	connString := fmt.Sprintf(
+		"server=%s;user id=%s;password=%s;port=%d;database=%s;",
+		server, user, password, port, database,
+	)
 	var err error
 	// Create connection pool
 	db, err = sql.Open("sqlserver", connString)
@@ -113,8 +115,10 @@ func initializeDB() {
 	}
 
 	_, err = db.Exec("DROP TABLE " + tableName)
-	_, err = db.Exec("CREATE TABLE " + tableName +
-		" (srcVertex integer, hash BIGINT, neighbors VARCHAR(8000))")
+	_, err = db.Exec(
+		"CREATE TABLE " + tableName +
+			" (srcVertex integer, hash BIGINT, neighbors VARCHAR(8000))",
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -142,6 +146,7 @@ func arrayToString(a []uint32, delim string) string {
 	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
 }
 
+// TODO: this needs to change
 func createAdjList() {
 	nodeAdjacencyList = make(map[uint32][]uint32)
 	var graphLocation string = "./web-Google.txt"
@@ -161,7 +166,9 @@ func createAdjList() {
 		edge := strings.Split(line, "\t")
 		vertex_0, _ := strconv.ParseUint(edge[0], 10, 32)
 		vertex_1, _ := strconv.ParseUint(edge[1], 10, 32)
-		nodeAdjacencyList[uint32(vertex_0)] = append(nodeAdjacencyList[uint32(vertex_0)], uint32(vertex_1))
+		nodeAdjacencyList[uint32(vertex_0)] = append(
+			nodeAdjacencyList[uint32(vertex_0)], uint32(vertex_1),
+		)
 		if nodeAdjacencyList[uint32(vertex_1)] == nil {
 			nodeAdjacencyList[uint32(vertex_1)] = []uint32{}
 		}
@@ -177,10 +184,15 @@ func createAdjList() {
 			largest_neighbors_node = int(key)
 		}
 	}
-	fmt.Printf("Node with the most neighbors is %v with %v neighbors\n", largest_neighbors_node, largest_neighbors)
+	fmt.Printf(
+		"Node with the most neighbors is %v with %v neighbors\n",
+		largest_neighbors_node, largest_neighbors,
+	)
 }
 
-func bulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) error {
+func bulkInsert(
+	unsavedRows map[uint32][]uint32, numParams int, params string,
+) error {
 	const maxParamsSQL = 2099
 	rowsPerInsert := maxParamsSQL / numParams
 	N := int(math.Ceil(float64(len(unsavedRows)) / float64(rowsPerInsert)))
@@ -194,33 +206,46 @@ func bulkInsert(unsavedRows map[uint32][]uint32, numParams int, params string) e
 
 		startOrdinalPosition := 1
 		for id, neighbors := range batches[i] {
-			neighborsString := arrayToString(neighbors, ".") //normal delimiters cause problems with SQL
-			valueStrings = append(valueStrings, getParamPlaceHolders(startOrdinalPosition))
+			neighborsString := arrayToString(
+				neighbors, ".",
+			) //normal delimiters cause problems with SQL
+			valueStrings = append(
+				valueStrings, getParamPlaceHolders(startOrdinalPosition),
+			)
 			valueArgs = append(valueArgs, id)
 			valueArgs = append(valueArgs, util.HashId(uint64(id)))
 			valueArgs = append(valueArgs, neighborsString)
 			startOrdinalPosition += numParams
 		}
-		stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s;",
-			tableName, params, strings.Join(valueStrings, ","))
+		stmt := fmt.Sprintf(
+			"INSERT INTO %s (%s) VALUES %s;",
+			tableName, params, strings.Join(valueStrings, ","),
+		)
 		_, err := db.Exec(stmt, valueArgs...)
 		if err != nil {
 			log.Fatal("Failed to bulk insert rows", err)
 			return err
 		}
-		log.Printf("Successfully inserted (%d/%d) time elapsed %v\n", i, N, time.Since(startTime))
+		log.Printf(
+			"Successfully inserted (%d/%d) time elapsed %v\n", i, N,
+			time.Since(startTime),
+		)
 	}
 	return nil
 }
 
 func getParamPlaceHolders(startOrdinalPosition int) string {
-	return fmt.Sprintf("(@p%d, @p%d, @p%d)",
+	return fmt.Sprintf(
+		"(@p%d, @p%d, @p%d)",
 		startOrdinalPosition,
 		startOrdinalPosition+1,
-		startOrdinalPosition+2)
+		startOrdinalPosition+2,
+	)
 }
 
-func getBatches(total map[uint32][]uint32, n int, rowsPerBulk int) []map[uint32][]uint32 {
+func getBatches(
+	total map[uint32][]uint32, n int, rowsPerBulk int,
+) []map[uint32][]uint32 {
 	batches := make([]map[uint32][]uint32, 0, n)
 
 	for i := 0; i < n; i++ {

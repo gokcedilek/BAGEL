@@ -3,22 +3,19 @@ package bagel
 import (
 	"context"
 	"log"
+	"math/rand"
 	"net"
 	"net/rpc"
 	coordgRPC "project/bagel/proto/coord"
 	"project/database"
+	fchecker "project/fcheck"
 	"project/util"
+	"strings"
 	"sync"
 
-	"github.com/golang/protobuf/ptypes/wrappers"
 	//"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/anypb"
 )
-
-//func createClientResult(result interface{}, queryType string) float64[] {
-//
-//}
 
 func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	*coordgRPC.QueryResult,
@@ -66,12 +63,21 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	c.lastWorkerCheckpoints = make(map[uint32]uint64)
 	c.superStepNumber = 1
 
+	coordQueryType := ""
+	switch q.QueryType {
+	case coordgRPC.QUERY_TYPE_PAGE_RANK:
+		coordQueryType = PAGE_RANK
+	case coordgRPC.QUERY_TYPE_SHORTEST_PATH:
+		coordQueryType = SHORTEST_PATH
+	}
+
 	coordQuery := Query{
-		ClientId:  q.ClientId,
-		QueryType: q.QueryType,
+		ClientId: q.ClientId,
+		QueryType: coordQueryType,
 		Nodes:     q.Nodes,
 		Graph:     q.Graph,
 	}
+	log.Printf("StartQuery: sending query: %v\n", coordQuery)
 
 	startSuperStep := StartSuperStep{
 		NumWorkers:      uint8(len(c.queryWorkers)),
@@ -118,21 +124,19 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	reply.Query = q
 
-	// create result object in gRPC proto format
-
-	// idea: add function to convert result interface{} to float[] so client
-	//always knows its a float[]
-
-	// TODO: use reflect to infer the type at runtime
-	resultWrapper := &wrappers.Int64Value{Value: 10}
-	any, err := anypb.New(resultWrapper)
-	if err != nil {
-		log.Printf("StartQuery: anypb error: %v\n", err)
+	// create result object in gRPC proto format (
+	//note: we cannot convert interface{} to float64,
+	//need to identify the runtime type of interface{} first)
+	log.Printf("type of result: %T\n", result)
+	switch resultType := result.(type) {
+	case float64:
+		reply.Result = resultType
+	case int:
+		reply.Result = float64(resultType)
+		//default:
+		//	reply.Result = float64(resultType)
 	}
 
-	log.Printf("StartQuery: any result: %v\n", any)
-
-	reply.Result = any // TODO: fix
 	log.Printf("StartQuery: sending back result: %v\n", reply.Result)
 
 	c.queryWorkers = nil
@@ -351,7 +355,6 @@ func (c *Coord) blockWorkersReady(
 	}
 }
 
-/*
 func (c *Coord) UpdateCheckpoint(
 	msg CheckpointMsg, reply *CheckpointMsg,
 ) error {
@@ -371,13 +374,15 @@ func (c *Coord) UpdateCheckpoint(
 
 	if allWorkersUpdated {
 		c.lastCheckpointNumber = msg.SuperStepNumber
+		log.Printf(
+			"UpdateCheckpoint: coord updated checkpoint number to %v\n"+
+				"", c.lastCheckpointNumber,
+		)
 	}
 
 	*reply = msg
 	return nil
 }
-
-*/
 
 func (c *Coord) Compute() (interface{}, error) {
 	// keep sending messages to workers, until everything has completed
@@ -470,7 +475,7 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 
 	c.queryWorkersDirectory[w.WorkerId] = w.WorkerListenAddr
 
-	//go c.monitor(w)
+	go c.monitor(w)
 
 	log.Printf(
 		"JoinWorker: New Worker %d successfully added. "+
@@ -556,7 +561,6 @@ func listenWorkers(workerAPIListenAddr string) {
 	}
 }
 
-/*
 func (c *Coord) monitor(w WorkerNode) {
 
 	// get random port for heartbeats
@@ -596,7 +600,6 @@ func (c *Coord) monitor(w WorkerNode) {
 		}
 	}
 }
-*/
 
 //func listenClients(clientAPIListenAddr string) {
 //
