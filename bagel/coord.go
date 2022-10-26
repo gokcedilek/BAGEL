@@ -74,10 +74,11 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	}
 
 	coordQuery := Query{
-		ClientId: q.ClientId,
+		ClientId:  q.ClientId,
 		QueryType: coordQueryType,
 		Nodes:     q.Nodes,
 		Graph:     q.Graph,
+		TableName: q.TableName,
 	}
 	log.Printf("StartQuery: sending query: %v\n", coordQuery)
 
@@ -100,8 +101,6 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 		"StartQuery: computing query %v with %d workers ready!\n", q,
 		numWorkers,
 	)
-
-	log.Printf("is coord server defined? %v\n", c)
 
 	// call workers start query handlers
 	for _, wClient := range c.queryWorkers {

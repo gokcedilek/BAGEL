@@ -15,53 +15,17 @@ const Form = () => {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // console.log('srcId', srcId);
-    // console.log('destId', destId);
-    // TODO: fix CORS issue
-    // try {
-    //   const response = await axios.get('http://localhost:56837/shortestpath');
-    //   console.log('response: ', response);
-    // } catch (e) {
-    //   console.log('error: ', e);
-    // }
-    // const query = new Query(['testId', 'test', [1, 2, 4], 'test']);
     const query = new Query([
-      'testId',
+      'clientId',
       QUERY_TYPE.SHORTEST_PATH,
-      [1, 2, 4],
-      'test',
+      [srcId, destId],
+      'xxx',
+      'gokce-test-db',
     ]);
     client.startQuery(query, null, (err, response) => {
       if (err) return console.log('err: ', err);
       console.log('response: ', response.toObject());
-
-      // TODO: attempt to fix deserializing ANY on the client side
-      // protobuf.load('./proto/coord.proto', (err, root) => {
-      //   if (err) {
-      //     console.log('err: ', err);
-      //     return;
-      //   }
-      //   const Result = root?.lookupType('QueryResult.Result');
-      //   // response.getResultAs
-      //   console.log('Result: ', Result);
-      //   const message = Result?.decode(response);
-      //   console.log('message: ', message);
-      //   // const object = Result.toObject(message, {
-      //   //   longs: String,
-      //   //   enums: String,
-      //   //   bytes: String,
-      //   // });
-      //   // console.log('object: ', object);
-      // });
     });
-    /*
-    {
-		ClientId:  "testclientId",
-		QueryType: "test",
-		Nodes:     []uint64{1, 2, 3},
-		Graph:     "test",
-	}
-    */
   };
 
   return (
@@ -70,7 +34,6 @@ const Form = () => {
         Source ID:
         <input
           type='text'
-          // name='username'
           value={srcId}
           onChange={(e) => setSrcId(e.target.value)}
         />
@@ -79,7 +42,6 @@ const Form = () => {
         Destination ID:
         <input
           type='text'
-          // name='age'
           value={destId}
           onChange={(e) => setDestId(e.target.value)}
         />
