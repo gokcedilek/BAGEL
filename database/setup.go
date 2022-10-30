@@ -114,7 +114,7 @@ func parseInputGraph(filePath string) []Vertex {
 			continue
 		}
 
-		edge := strings.Split(line, "\t")
+		edge := strings.Split(line, ",")
 		src, _ := strconv.ParseUint(edge[0], 10, 32)
 		dest, _ := strconv.ParseUint(edge[1], 10, 32)
 
