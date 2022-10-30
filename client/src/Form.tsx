@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
-// import axios from 'axios';
-// CoordClient from .grpc.pb
-// Query from .pb
 import { CoordClient } from './proto/coord_grpc_web_pb';
 import { Query, QUERY_TYPE } from './proto/coord_pb';
-import protobuf from 'protobufjs';
 
-// const client = new CoordClient('https://localhost:8080', null, null);
 const client = new CoordClient('http://localhost:8080', null, null);
 
 const Form = () => {

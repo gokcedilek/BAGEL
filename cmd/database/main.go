@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"project/database"
+	"project/util"
 )
 
 const (
@@ -35,8 +37,12 @@ func main() {
 	if os.Args[1] == SETUP {
 		database.CreateTableIfNotExists(svc, os.Args[2])
 		database.AddGraph(
-			svc, "./testGraph.txt", os.Args[2],
+			svc, fmt.Sprintf("%s\\testGraph.txt", util.GetProjectRoot()),
+			os.Args[2],
 		)
+		//database.AddGraph(
+		//	svc, "./testGraph.txt", os.Args[2],
+		//)
 	}
 
 }

@@ -389,8 +389,3 @@ func reassignWorkerHosts(filename string, host string, coordHost string) error {
 	worker.FCheckAckLocalAddress = SetHost(worker.FCheckAckLocalAddress, host)
 	return WriteJSONConfig(getConfigPath(filename), worker)
 }
-
-//// update ports for Docker vs local
-//func UpdateToDockerAddrs() {
-//
-//}
