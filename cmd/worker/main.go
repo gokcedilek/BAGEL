@@ -14,7 +14,9 @@ import (
 func main() {
 
 	// create a log file and log to both console and terminal
-	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(
+		"bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,6 +55,8 @@ func main() {
 		fmt.Sprintf("config/worker%v_config.json", workerId), &config,
 	)
 	log.Printf("Main: starting Worker %v\n", config.WorkerId)
+
+	log.Printf("config: %v\n", config)
 
 	worker := bagel.NewWorker(config)
 

@@ -17,7 +17,9 @@ const (
 )
 
 func main() {
-	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(
+		"bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,7 +36,13 @@ func main() {
 	svc := database.GetDynamoClient()
 	if os.Args[1] == SETUP {
 		database.CreateTableIfNotExists(svc, os.Args[2])
-		database.AddGraph(svc, fmt.Sprintf("%s\\testGraph.txt", util.GetProjectRoot()), os.Args[2])
+		database.AddGraph(
+			svc, fmt.Sprintf("%s\\testGraph.txt", util.GetProjectRoot()),
+			os.Args[2],
+		)
+		//database.AddGraph(
+		//	svc, "./testGraph.txt", os.Args[2],
+		//)
 	}
 
 }

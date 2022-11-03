@@ -3,15 +3,16 @@ package database
 import (
 	"context"
 	"fmt"
+	"log"
+	"math"
+	"strconv"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"log"
-	"math"
-	"strconv"
 )
 
 const CENTRAL_DB_NAME = "bagel-db"
@@ -47,35 +48,52 @@ func GetDynamoClient() *dynamodb.Client {
 }
 
 func getLocalDynamoConfiguration() (aws.Config, error) {
-	config, err := config.LoadDefaultConfig(context.TODO(),
+	config, err := config.LoadDefaultConfig(
+		context.TODO(),
 		config.WithRegion(DEFAULT_REGION),
-		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
-			func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: "http://localhost:8000"}, nil
-			})),
-		config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
-			Value: aws.Credentials{
-				AccessKeyID:     "local",
-				SecretAccessKey: "local",
-				SessionToken:    "local",
-				Source:          "Hard-coded credentials, irrelvant values for local DynamoDB",
+		config.WithEndpointResolverWithOptions(
+			aws.EndpointResolverWithOptionsFunc(
+				func(
+					service, region string, options ...interface{},
+				) (aws.Endpoint, error) {
+					return aws.Endpoint{URL: "http://localhost:8000"}, nil
+				},
+			),
+		),
+		config.WithCredentialsProvider(
+			credentials.StaticCredentialsProvider{
+				Value: aws.Credentials{
+					AccessKeyID:     "local",
+					SecretAccessKey: "local",
+					SessionToken:    "local",
+					Source:          "Hard-coded credentials, irrelvant values for local DynamoDB",
+				},
 			},
-		}))
+		),
+	)
 
 	return config, err
 }
 
-func GetVertexByID(svc *dynamodb.Client, vertexId int64, tableName string) (Vertex, error) {
+func GetVertexByID(
+	svc *dynamodb.Client, vertexId int64, tableName string,
+) (Vertex, error) {
 	if svc == nil {
 		svc = GetDynamoClient()
 	}
 
-	res, err := svc.GetItem(context.TODO(), &dynamodb.GetItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]types.AttributeValue{
-			"ID": &types.AttributeValueMemberN{Value: strconv.FormatInt(vertexId, 10)},
+	res, err := svc.GetItem(
+		context.TODO(), &dynamodb.GetItemInput{
+			TableName: aws.String(tableName),
+			Key: map[string]types.AttributeValue{
+				"ID": &types.AttributeValueMemberN{
+					Value: strconv.FormatInt(
+						vertexId, 10,
+					),
+				},
+			},
 		},
-	})
+	)
 
 	if err != nil {
 		return Vertex{}, err
@@ -86,22 +104,30 @@ func GetVertexByID(svc *dynamodb.Client, vertexId int64, tableName string) (Vert
 	return vertex, nil
 }
 
-func GetPartitionForWorkerX(svc *dynamodb.Client, tableName string, partitionNum int, worker int) ([]Vertex, error) {
+func GetPartitionForWorkerX(
+	svc *dynamodb.Client, tableName string, partitionNum int, worker int,
+) ([]Vertex, error) {
 	if !IsPartitionCached(svc, tableName, partitionNum) {
 		PartitionGraph(svc, tableName, partitionNum)
 	}
 
 	vertices := make([]Vertex, 0)
-	p := dynamodb.NewScanPaginator(svc, &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String("#partition = :partitionNum"),
-		ExpressionAttributeNames: map[string]string{
-			"#partition": getNumberOfWorkersXName(partitionNum),
+	p := dynamodb.NewScanPaginator(
+		svc, &dynamodb.ScanInput{
+			TableName:        aws.String(tableName),
+			FilterExpression: aws.String("#partition = :partitionNum"),
+			ExpressionAttributeNames: map[string]string{
+				"#partition": getNumberOfWorkersXName(partitionNum),
+			},
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":partitionNum": &types.AttributeValueMemberN{
+					Value: strconv.FormatInt(
+						int64(worker), 10,
+					),
+				},
+			},
 		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":partitionNum": &types.AttributeValueMemberN{Value: strconv.FormatInt(int64(worker), 10)},
-		},
-	})
+	)
 
 	for p.HasMorePages() {
 		paged, err := p.NextPage(context.TODO())
@@ -111,7 +137,9 @@ func GetPartitionForWorkerX(svc *dynamodb.Client, tableName string, partitionNum
 		}
 
 		var paginatedVertices []Vertex
-		err = attributevalue.UnmarshalListOfMaps(paged.Items, &paginatedVertices)
+		err = attributevalue.UnmarshalListOfMaps(
+			paged.Items, &paginatedVertices,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal %w", err)
 		}
@@ -121,9 +149,14 @@ func GetPartitionForWorkerX(svc *dynamodb.Client, tableName string, partitionNum
 	return vertices, nil
 }
 
-func PartitionGraph(svc *dynamodb.Client, tableName string, numPartition int) error {
+func PartitionGraph(
+	svc *dynamodb.Client, tableName string, numPartition int,
+) error {
 	if IsPartitionCached(svc, tableName, numPartition) {
-		fmt.Printf("cache for %d worker partition exists in %s\n", numPartition, tableName)
+		fmt.Printf(
+			"cache for %d worker partition exists in %s\n", numPartition,
+			tableName,
+		)
 		return nil
 	}
 
@@ -139,9 +172,11 @@ func PartitionGraph(svc *dynamodb.Client, tableName string, numPartition int) er
 }
 
 func GetAllVertices(svc *dynamodb.Client, tableName string) ([]Vertex, error) {
-	p := dynamodb.NewScanPaginator(svc, &dynamodb.ScanInput{
-		TableName: aws.String(tableName),
-	})
+	p := dynamodb.NewScanPaginator(
+		svc, &dynamodb.ScanInput{
+			TableName: aws.String(tableName),
+		},
+	)
 
 	var vertices []Vertex
 
@@ -164,17 +199,25 @@ func GetAllVertices(svc *dynamodb.Client, tableName string) ([]Vertex, error) {
 	return vertices, nil
 }
 
-func IsPartitionCached(svc *dynamodb.Client, tableName string, numPartition int) bool {
+func IsPartitionCached(
+	svc *dynamodb.Client, tableName string, numPartition int,
+) bool {
 	limit := int32(1)
 	partitionName := getNumberOfWorkersXName(numPartition)
 
 	fmt.Println("tableName: ", tableName)
 
-	out, err := svc.Scan(context.TODO(), &dynamodb.ScanInput{
-		TableName:        aws.String(tableName),
-		FilterExpression: aws.String(fmt.Sprintf("attribute_exists(%s)", partitionName)),
-		Limit:            &limit,
-	})
+	out, err := svc.Scan(
+		context.TODO(), &dynamodb.ScanInput{
+			TableName: aws.String(tableName),
+			FilterExpression: aws.String(
+				fmt.Sprintf(
+					"attribute_exists(%s)", partitionName,
+				),
+			),
+			Limit: &limit,
+		},
+	)
 
 	if err != nil {
 		log.Fatalf("Failed to verify partition cache %v\n", err)
@@ -183,14 +226,18 @@ func IsPartitionCached(svc *dynamodb.Client, tableName string, numPartition int)
 	return len(out.Items) != 0
 }
 
-func BatchInsertVertices(svc *dynamodb.Client, tableName string, batches [][]types.WriteRequest) {
+func BatchInsertVertices(
+	svc *dynamodb.Client, tableName string, batches [][]types.WriteRequest,
+) {
 	numBatches := len(batches)
 	for b := 0; b < numBatches; b++ {
-		_, err := svc.BatchWriteItem(context.TODO(), &dynamodb.BatchWriteItemInput{
-			RequestItems: map[string][]types.WriteRequest{
-				tableName: batches[b],
+		_, err := svc.BatchWriteItem(
+			context.TODO(), &dynamodb.BatchWriteItemInput{
+				RequestItems: map[string][]types.WriteRequest{
+					tableName: batches[b],
+				},
 			},
-		})
+		)
 
 		if err != nil {
 			log.Fatalf("Failed to upload batch %v. Here's why %v\n", b, err)
@@ -225,7 +272,9 @@ func CreateBatches(vertices []Vertex) [][]types.WriteRequest {
 	return batches
 }
 
-func CreatePartitionBatches(vertices []Vertex, numPartitions int) [][]types.WriteRequest {
+func CreatePartitionBatches(
+	vertices []Vertex, numPartitions int,
+) [][]types.WriteRequest {
 	numBatches := int(math.Ceil(float64(len(vertices)) / float64(MAXIMUM_ITEMS_PER_BATCH)))
 	lastBatchSize := len(vertices) % MAXIMUM_ITEMS_PER_BATCH
 
@@ -252,23 +301,41 @@ func marshalVertexWriteReq(vertex Vertex) types.WriteRequest {
 	return types.WriteRequest{
 		PutRequest: &types.PutRequest{
 			Item: map[string]types.AttributeValue{
-				"ID":    &types.AttributeValueMemberN{Value: strconv.FormatUint(vertex.ID, 10)},
+				"ID": &types.AttributeValueMemberN{
+					Value: strconv.FormatUint(
+						vertex.ID, 10,
+					),
+				},
 				"Edges": &types.AttributeValueMemberL{Value: edgesToAttributeValueSlice(vertex.Edges)},
-				"Hash":  &types.AttributeValueMemberN{Value: strconv.FormatUint(vertex.Hash, 10)},
+				"Hash": &types.AttributeValueMemberN{
+					Value: strconv.FormatUint(
+						vertex.Hash, 10,
+					),
+				},
 			},
 		},
 	}
 }
 
-func marshalVertexForPartition(vertex Vertex, numPartitions int) types.WriteRequest {
+func marshalVertexForPartition(
+	vertex Vertex, numPartitions int,
+) types.WriteRequest {
 	partition := vertex.Hash % uint64(numPartitions)
 	partitionAttrName := getNumberOfWorkersXName(numPartitions)
 	return types.WriteRequest{
 		PutRequest: &types.PutRequest{
 			Item: map[string]types.AttributeValue{
-				"ID":    &types.AttributeValueMemberN{Value: strconv.FormatUint(vertex.ID, 10)},
+				"ID": &types.AttributeValueMemberN{
+					Value: strconv.FormatUint(
+						vertex.ID, 10,
+					),
+				},
 				"Edges": &types.AttributeValueMemberL{Value: edgesToAttributeValueSlice(vertex.Edges)},
-				"Hash":  &types.AttributeValueMemberN{Value: strconv.FormatUint(vertex.Hash, 10)},
+				"Hash": &types.AttributeValueMemberN{
+					Value: strconv.FormatUint(
+						vertex.Hash, 10,
+					),
+				},
 				partitionAttrName: &types.AttributeValueMemberN{
 					Value: strconv.FormatUint(partition, 10),
 				},
@@ -280,7 +347,11 @@ func marshalVertexForPartition(vertex Vertex, numPartitions int) types.WriteRequ
 func edgesToAttributeValueSlice(edges []uint64) []types.AttributeValue {
 	as := make([]types.AttributeValue, len(edges))
 	for idx, edge := range edges {
-		as[idx] = &types.AttributeValueMemberN{Value: strconv.FormatUint(edge, 10)}
+		as[idx] = &types.AttributeValueMemberN{
+			Value: strconv.FormatUint(
+				edge, 10,
+			),
+		}
 	}
 	return as
 }

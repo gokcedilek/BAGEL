@@ -1,0 +1,26 @@
+syntax = "proto3";
+package coord;
+option go_package="./coord/";
+
+enum QUERY_TYPE {
+  PAGE_RANK   = 0;
+  SHORTEST_PATH  = 1;
+}
+
+message Query {
+  string ClientId = 1;
+  QUERY_TYPE QueryType = 2;
+  repeated uint64 Nodes = 3;
+  string Graph = 4;
+  string TableName = 5;
+}
+
+message QueryResult {
+  Query  Query = 1;
+  double Result = 2;
+  string Error = 3;
+}
+
+service Coord {
+  rpc StartQuery(Query) returns (QueryResult) {};
+}

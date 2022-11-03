@@ -1,0 +1,22 @@
+FROM golang:1.17-alpine
+RUN apk add build-base
+
+WORKDIR /coord
+
+COPY go.mod ./
+COPY go.sum ./
+
+RUN go mod download
+
+COPY . .
+
+RUN go build -o bin/coord ./cmd/coord
+
+# EXPOSE 56837 59141
+EXPOSE 56837
+
+CMD [ "./bin/coord" ]
+
+
+
+

@@ -116,6 +116,7 @@ func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
 		len(vertices),
 		w.config.WorkerId,
 	)
+	log.Printf("vertices: %v", vertices)
 	if err != nil {
 		panic("getVerticesModulo failed")
 	}
@@ -161,6 +162,7 @@ func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *interface{},
 ) error {
 
+	log.Printf("StartQuery: startSuperStep: %v\n", startSuperStep)
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
@@ -347,6 +349,12 @@ func (w *Worker) Start() error {
 func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
+	log.Printf("ComputeVertices: worker: %v, args: %v\n", w, args)
+	log.Printf(
+		"ComputeVertices: queryType == shortestpath: %v, "+
+			"queryType == pagerank: %v\n", w.Query.QueryType == SHORTEST_PATH,
+		w.Query.QueryType == PAGE_RANK,
+	)
 
 	// save the checkpoint before running superstep S
 	if args.IsCheckpoint && !args.IsRestart {

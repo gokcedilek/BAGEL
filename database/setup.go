@@ -4,17 +4,21 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"os"
 	"project/util"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-func createTable(context context.Context, svc *dynamodb.Client, tableDefinition *dynamodb.CreateTableInput) {
+func createTable(
+	context context.Context, svc *dynamodb.Client,
+	tableDefinition *dynamodb.CreateTableInput,
+) {
 	out, err := svc.CreateTable(context, tableDefinition)
 	if err != nil {
 		panic(err)
@@ -42,7 +46,9 @@ func CreateTableIfNotExists(svc *dynamodb.Client, tableName string) {
 	CreateTable(context.TODO(), svc, tableName)
 }
 
-func CreateTable(context context.Context, svc *dynamodb.Client, tableName string) {
+func CreateTable(
+	context context.Context, svc *dynamodb.Client, tableName string,
+) {
 	bagelDefinition := &dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
@@ -72,7 +78,8 @@ func AddGraph(svc *dynamodb.Client, filePath string, tableName string) {
 
 func waitForTable(ctx context.Context, db *dynamodb.Client, tn string) error {
 	w := dynamodb.NewTableExistsWaiter(db)
-	err := w.Wait(ctx,
+	err := w.Wait(
+		ctx,
 		&dynamodb.DescribeTableInput{
 			TableName: aws.String(tn),
 		},
@@ -80,7 +87,8 @@ func waitForTable(ctx context.Context, db *dynamodb.Client, tn string) error {
 		func(o *dynamodb.TableExistsWaiterOptions) {
 			o.MaxDelay = 5 * time.Second
 			o.MinDelay = 5 * time.Second
-		})
+		},
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -106,7 +114,7 @@ func parseInputGraph(filePath string) []Vertex {
 			continue
 		}
 
-		edge := strings.Split(line, "\t")
+		edge := strings.Split(line, ",")
 		src, _ := strconv.ParseUint(edge[0], 10, 32)
 		dest, _ := strconv.ParseUint(edge[1], 10, 32)
 

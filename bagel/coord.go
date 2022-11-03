@@ -1,16 +1,153 @@
 package bagel
 
 import (
+	"context"
 	"log"
 	"math/rand"
 	"net"
 	"net/rpc"
+	coordgRPC "project/bagel/proto/coord"
 	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"strings"
 	"sync"
+
+	//"github.com/golang/protobuf/ptypes/any"
+	"google.golang.org/grpc"
 )
+
+func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
+	*coordgRPC.QueryResult,
+	error,
+) {
+	var reply coordgRPC.QueryResult
+
+	log.Printf("StartQuery: workers: %v\n", c.workers)
+	log.Printf("StartQuery: received query: %v\n", q)
+
+	if len(c.workers) == 0 {
+		log.Printf(
+			"StartQuery: No workers available - will block" +
+				" until workers join\n",
+		)
+	}
+
+	for len(c.workers) == 0 {
+		// block while no workers available
+	}
+
+	// validate vertices sent by the client query
+	svc := database.GetDynamoClient()
+	for _, vId := range q.Nodes {
+		// TODO: include db name as part of query
+		_, err := database.GetVertexByID(svc, int64(vId), q.TableName)
+		if err != nil {
+			reply.Error = err.Error()
+			return &reply, nil
+		}
+	}
+
+	// go doesn't have a deep copy method :(
+	c.queryWorkers = make(map[uint32]*rpc.Client)
+	for k, v := range c.workers {
+		c.queryWorkers[k] = v
+	}
+
+	// initialize workerReady map
+	c.workerReadyMap = make(map[uint32]bool)
+	for k, _ := range c.queryWorkers {
+		c.workerReadyMap[k] = true
+	}
+
+	// create new map of checkpoints for a new query which may have different number of workers
+	c.lastCheckpointNumber = 0
+	c.lastWorkerCheckpoints = make(map[uint32]uint64)
+	c.superStepNumber = 1
+
+	coordQueryType := ""
+	switch q.QueryType {
+	case coordgRPC.QUERY_TYPE_PAGE_RANK:
+		coordQueryType = PAGE_RANK
+	case coordgRPC.QUERY_TYPE_SHORTEST_PATH:
+		coordQueryType = SHORTEST_PATH
+	}
+
+	coordQuery := Query{
+		ClientId:  q.ClientId,
+		QueryType: coordQueryType,
+		Nodes:     q.Nodes,
+		Graph:     q.Graph,
+		TableName: q.TableName,
+	}
+	log.Printf("StartQuery: sending query: %v\n", coordQuery)
+
+	startSuperStep := StartSuperStep{
+		NumWorkers:      uint8(len(c.queryWorkers)),
+		WorkerDirectory: c.queryWorkersDirectory,
+		Query:           coordQuery,
+	}
+
+	numWorkers := len(c.queryWorkers)
+	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
+	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
+	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
+	c.allWorkersReady = make(chan superstepDone, 1)
+	c.restartSuperStepCh = make(chan uint32, numWorkers)
+
+	c.query = coordQuery
+
+	log.Printf(
+		"StartQuery: computing query %v with %d workers ready!\n", q,
+		numWorkers,
+	)
+
+	// call workers start query handlers
+	for _, wClient := range c.queryWorkers {
+		var result interface{}
+		wClient.Go(
+			"Worker.StartQuery", startSuperStep, &result,
+			c.workerDoneStart,
+		)
+	}
+
+	go c.blockWorkersReady(
+		len(c.queryWorkers),
+		c.workerDoneStart,
+	)
+
+	// start query computation
+	result, err := c.Compute() // TODO
+	if err != nil {
+		log.Printf("StartQuery: Compute returned error: %v\n", err)
+	}
+	log.Printf("StartQuery: computed result: %v\n", result)
+
+	reply.Query = q
+
+	// create result object in gRPC proto format (
+	//note: we cannot convert interface{} to float64,
+	//need to identify the runtime type of interface{} first)
+	log.Printf("type of result: %T\n", result)
+	switch resultType := result.(type) {
+	case float64:
+		reply.Result = resultType
+	case int:
+		reply.Result = float64(resultType)
+		//default:
+		//	reply.Result = float64(resultType)
+	}
+
+	log.Printf("StartQuery: sending back result: %v\n", reply.Result)
+
+	c.queryWorkers = nil
+	c.query = Query{}
+
+	// return nil for no errors
+	return &reply, nil
+}
+
+/* end of proto config */
 
 type CoordConfig struct {
 	ClientAPIListenAddr     string // client will know this and use it to contact coord
@@ -21,6 +158,7 @@ type CoordConfig struct {
 
 type Coord struct {
 	// Coord state may go here
+	coordgRPC.UnimplementedCoordServer
 	clientAPIListenAddr   string
 	workerAPIListenAddr   string
 	lostMsgsThresh        uint8
@@ -52,107 +190,106 @@ type superstepDone struct {
 func NewCoord() *Coord {
 
 	return &Coord{
-		clientAPIListenAddr:   "",
-		workerAPIListenAddr:   "",
-		lostMsgsThresh:        0,
-		lastWorkerCheckpoints: make(map[uint32]uint64),
-		workers:               make(map[uint32]*rpc.Client),
-		queryWorkers:          make(WorkerCallBook),
-		queryWorkersDirectory: make(WorkerDirectory),
-		superStepNumber:       1,
+		clientAPIListenAddr:      "",
+		workerAPIListenAddr:      "",
+		lostMsgsThresh:           0,
+		lastWorkerCheckpoints:    make(map[uint32]uint64),
+		workers:                  make(map[uint32]*rpc.Client),
+		queryWorkers:             make(WorkerCallBook),
+		queryWorkersDirectory:    make(WorkerDirectory),
+		superStepNumber:          1,
+		UnimplementedCoordServer: coordgRPC.UnimplementedCoordServer{},
 	}
 }
 
 // this is the start of the query where coord notifies workers to initialize
 // state for SuperStep 0
-func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
-	log.Printf("StartQuery: received query: %v\n", q)
-
-	if len(c.workers) == 0 {
-		log.Printf(
-			"StartQuery: No workers available - will block" +
-				" until workers join\n",
-		)
-	}
-
-	for len(c.workers) == 0 {
-		// block while no workers available
-	}
-
-	// validate vertices sent by the client query
-	svc := database.GetDynamoClient()
-	for _, vId := range q.Nodes {
-		// TODO: include db name as part of query
-		_, err := database.GetVertexByID(svc, int64(vId), q.TableName)
-		if err != nil {
-			reply.Error = err.Error()
-			return nil
-		}
-	}
-
-	// go doesn't have a deep copy method :(
-	c.queryWorkers = make(map[uint32]*rpc.Client)
-	for k, v := range c.workers {
-		c.queryWorkers[k] = v
-	}
-
-	// initialize workerReady map
-	c.workerReadyMap = make(map[uint32]bool)
-	for k, _ := range c.queryWorkers {
-		c.workerReadyMap[k] = true
-	}
-
-	// create new map of checkpoints for a new query which may have different number of workers
-	c.lastCheckpointNumber = 0
-	c.lastWorkerCheckpoints = make(map[uint32]uint64)
-	c.superStepNumber = 1
-
-	startSuperStep := StartSuperStep{
-		NumWorkers:      uint8(len(c.queryWorkers)),
-		WorkerDirectory: c.queryWorkersDirectory,
-		Query:           q,
-	}
-
-	numWorkers := len(c.queryWorkers)
-	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
-	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
-	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
-	c.allWorkersReady = make(chan superstepDone, 1)
-	c.restartSuperStepCh = make(chan uint32, numWorkers)
-
-	c.query = q
-
-	log.Printf(
-		"StartQuery: computing query %v with %d workers ready!\n", q,
-		numWorkers,
-	)
-
-	// call workers start query handlers
-	for _, wClient := range c.queryWorkers {
-		var result interface{}
-		wClient.Go(
-			"Worker.StartQuery", startSuperStep, &result,
-			c.workerDoneStart,
-		)
-	}
-
-	go c.blockWorkersReady(len(c.queryWorkers), c.workerDoneStart)
-
-	// start query computation
-	result, err := c.Compute()
-	if err != nil {
-		log.Printf("StartQuery: Compute returned error: %v", err)
-	}
-
-	reply.Query = q
-	reply.Result = result
-
-	c.queryWorkers = nil
-	c.query = Query{}
-
-	// return nil for no errors
-	return nil
-}
+//func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
+//	log.Printf("StartQuery: received query: %v\n", q)
+//
+//	if len(c.workers) == 0 {
+//		log.Printf(
+//			"StartQuery: No workers available - will block" +
+//				" until workers join\n",
+//		)
+//	}
+//
+//	for len(c.workers) == 0 {
+//		// block while no workers available
+//	}
+//
+//	// validate vertices sent by the client query
+//	for _, vId := range q.Nodes {
+//		_, err := database.GetVertexById(int(vId))
+//		if err != nil {
+//			reply.Error = err.Error()
+//			return nil
+//		}
+//	}
+//
+//	// go doesn't have a deep copy method :(
+//	c.queryWorkers = make(map[uint32]*rpc.Client)
+//	for k, v := range c.workers {
+//		c.queryWorkers[k] = v
+//	}
+//
+//	// initialize workerReady map
+//	c.workerReadyMap = make(map[uint32]bool)
+//	for k, _ := range c.queryWorkers {
+//		c.workerReadyMap[k] = true
+//	}
+//
+//	// create new map of checkpoints for a new query which may have different number of workers
+//	c.lastCheckpointNumber = 0
+//	c.lastWorkerCheckpoints = make(map[uint32]uint64)
+//	c.superStepNumber = 1
+//
+//	startSuperStep := StartSuperStep{
+//		NumWorkers:      uint8(len(c.queryWorkers)),
+//		WorkerDirectory: c.queryWorkersDirectory,
+//		Query:           q,
+//	}
+//
+//	numWorkers := len(c.queryWorkers)
+//	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
+//	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
+//	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
+//	c.allWorkersReady = make(chan superstepDone, 1)
+//	c.restartSuperStepCh = make(chan uint32, numWorkers)
+//
+//	c.query = q
+//
+//	log.Printf(
+//		"StartQuery: computing query %v with %d workers ready!\n", q,
+//		numWorkers,
+//	)
+//
+//	// call workers start query handlers
+//	for _, wClient := range c.queryWorkers {
+//		var result interface{}
+//		wClient.Go(
+//			"Worker.StartQuery", startSuperStep, &result,
+//			c.workerDoneStart,
+//		)
+//	}
+//
+//	go c.blockWorkersReady(len(c.queryWorkers), c.workerDoneStart)
+//
+//	// start query computation
+//	result, err := c.Compute()
+//	if err != nil {
+//		log.Printf("StartQuery: Compute returned error: %v", err)
+//	}
+//
+//	reply.Query = q
+//	reply.Result = result
+//
+//	c.queryWorkers = nil
+//	c.query = Query{}
+//
+//	// return nil for no errors
+//	return nil
+//}
 
 func (c *Coord) blockWorkersReady(
 	numWorkers int, workerDone chan *rpc.Call,
@@ -238,6 +375,10 @@ func (c *Coord) UpdateCheckpoint(
 
 	if allWorkersUpdated {
 		c.lastCheckpointNumber = msg.SuperStepNumber
+		log.Printf(
+			"UpdateCheckpoint: coord updated checkpoint number to %v\n"+
+				"", c.lastCheckpointNumber,
+		)
 	}
 
 	*reply = msg
@@ -371,8 +512,12 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 				"Join Worker: all %v workers ready, "+
 					"calling restartCheckpoint!\n", len(c.workerReadyMap),
 			)
-			c.restartCheckpoint()
-			c.blockWorkersReady(len(c.workerReadyMap), c.workerDoneRestart)
+			c.restartCheckpoint() // does this need to be c.
+			// restartCheckpoint for data to be persisted in c?
+			c.blockWorkersReady(
+				len(c.workerReadyMap),
+				c.workerDoneRestart,
+			)
 		}
 	} else {
 		c.workers[w.WorkerId] = client
@@ -381,6 +526,15 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 			w.WorkerId,
 		)
 	}
+
+	log.Printf(
+		"JoinWorker: New Worker %d successfully added. "+
+			"%d Workers joined\n",
+		w.WorkerId, len(c.workers),
+	)
+
+	log.Printf("JoinWorker: coord: %v\n", c)
+	log.Printf("JoinWorker: workers: %v\n", c.workers)
 
 	// return nil for no errors
 	return nil
@@ -448,9 +602,30 @@ func (c *Coord) monitor(w WorkerNode) {
 	}
 }
 
-func listenClients(clientAPIListenAddr string) {
+//func listenClients(clientAPIListenAddr string) {
+//
+//	wlisten, err := net.Listen("tcp", clientAPIListenAddr)
+//	if err != nil {
+//		log.Printf("listenClients: Error listening: %v\n", err)
+//	}
+//	log.Printf(
+//		"listenClients: Listening for clients at %v\n",
+//		clientAPIListenAddr,
+//	)
+//
+//	for {
+//		conn, err := wlisten.Accept()
+//		if err != nil {
+//			log.Printf(
+//				"listenClients: Error accepting client: %v\n", err,
+//			)
+//		}
+//		go rpc.ServeConn(conn) // blocks while serving connection until client hangs up
+//	}
+//}
 
-	wlisten, err := net.Listen("tcp", clientAPIListenAddr)
+func (c *Coord) listenClientsgRPC(clientAPIListenAddr string) {
+	lis, err := net.Listen("tcp", clientAPIListenAddr)
 	if err != nil {
 		log.Printf("listenClients: Error listening: %v\n", err)
 	}
@@ -459,15 +634,16 @@ func listenClients(clientAPIListenAddr string) {
 		clientAPIListenAddr,
 	)
 
-	for {
-		conn, err := wlisten.Accept()
-		if err != nil {
-			log.Printf(
-				"listenClients: Error accepting client: %v\n", err,
-			)
-		}
-		go rpc.ServeConn(conn) // blocks while serving connection until client hangs up
+	//for {
+	//
+	//}
+	s := grpc.NewServer()
+	coordgRPC.RegisterCoordServer(s, c)
+
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("listenClients: Error while serving : %v", err)
 	}
+
 }
 
 // Only returns when network or other unrecoverable errors occur
@@ -482,12 +658,13 @@ func (c *Coord) Start(
 	c.checkpointFrequency = checkpointSteps
 
 	err := rpc.Register(c)
+	log.Printf("error: %v\n", err)
 	util.CheckErr(err, "Coord could not register RPCs")
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go listenWorkers(workerAPIListenAddr)
-	go listenClients(clientAPIListenAddr)
+	go c.listenClientsgRPC(clientAPIListenAddr)
 	wg.Wait()
 
 	// will never return
