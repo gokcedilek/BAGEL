@@ -29,7 +29,10 @@ func main() {
 	log.SetPrefix("Database" + ": ")
 
 	if len(os.Args) != 4 {
-		log.Printf("Usage: ./bin/database [$1 TABLE_NAME] [$2<PATH_TO_GRAPH.txt>]")
+		log.Printf(
+			"Usage: ./bin/database setup [$2 TABLE_NAME] [$3" +
+				"<PATH_TO_GRAPH.txt>]",
+		)
 		return
 	}
 
@@ -37,12 +40,9 @@ func main() {
 	if os.Args[1] == SETUP {
 		database.CreateTableIfNotExists(svc, os.Args[2])
 		database.AddGraph(
-			svc, fmt.Sprintf("%s\\testGraph.txt", util.GetProjectRoot()),
+			svc, fmt.Sprintf("%s/%s", util.GetProjectRoot(), os.Args[3]),
 			os.Args[2],
 		)
-		//database.AddGraph(
-		//	svc, "./testGraph.txt", os.Args[2],
-		//)
 	}
 
 }
