@@ -38,10 +38,7 @@ func main() {
 
 	svc := database.GetDynamoClient()
 	if os.Args[1] == SETUP {
-		database.CreateTableIfNotExists(svc, os.Args[3])
-		log.Printf(
-			fmt.Sprintf("%s/%s", util.GetProjectRoot(), os.Args[3]),
-		)
+		database.CreateTableIfNotExists(svc, os.Args[2])
 		database.AddGraph(
 			svc, fmt.Sprintf("%s/%s", util.GetProjectRoot(), os.Args[3]),
 			os.Args[2],
