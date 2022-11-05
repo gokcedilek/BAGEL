@@ -6,17 +6,21 @@ import (
 	"math/rand"
 	"net"
 	"net/rpc"
+	"os"
 	coordgRPC "project/bagel/proto/coord"
 	"project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"strings"
 	"sync"
+	"time"
 
 	//"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
 )
 
+// this is the start of the query where coord notifies workers to initialize
+// state for SuperStep 0
 func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	*coordgRPC.QueryResult,
 	error,
@@ -116,8 +120,18 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 		c.workerDoneStart,
 	)
 
+	// create a log file
+	logFile, err := os.OpenFile(
+		"coord.log", os.O_WRONLY|os.O_CREATE, 0644,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logFile.Close()
+	logger := log.New(logFile, "Coord ", log.LstdFlags)
+
 	// start query computation
-	result, err := c.Compute() // TODO
+	result, err := c.Compute(logger) 
 	if err != nil {
 		log.Printf("StartQuery: Compute returned error: %v\n", err)
 	}
@@ -201,95 +215,6 @@ func NewCoord() *Coord {
 		UnimplementedCoordServer: coordgRPC.UnimplementedCoordServer{},
 	}
 }
-
-// this is the start of the query where coord notifies workers to initialize
-// state for SuperStep 0
-//func (c *Coord) StartQuery(q Query, reply *QueryResult) error {
-//	log.Printf("StartQuery: received query: %v\n", q)
-//
-//	if len(c.workers) == 0 {
-//		log.Printf(
-//			"StartQuery: No workers available - will block" +
-//				" until workers join\n",
-//		)
-//	}
-//
-//	for len(c.workers) == 0 {
-//		// block while no workers available
-//	}
-//
-//	// validate vertices sent by the client query
-//	for _, vId := range q.Nodes {
-//		_, err := database.GetVertexById(int(vId))
-//		if err != nil {
-//			reply.Error = err.Error()
-//			return nil
-//		}
-//	}
-//
-//	// go doesn't have a deep copy method :(
-//	c.queryWorkers = make(map[uint32]*rpc.Client)
-//	for k, v := range c.workers {
-//		c.queryWorkers[k] = v
-//	}
-//
-//	// initialize workerReady map
-//	c.workerReadyMap = make(map[uint32]bool)
-//	for k, _ := range c.queryWorkers {
-//		c.workerReadyMap[k] = true
-//	}
-//
-//	// create new map of checkpoints for a new query which may have different number of workers
-//	c.lastCheckpointNumber = 0
-//	c.lastWorkerCheckpoints = make(map[uint32]uint64)
-//	c.superStepNumber = 1
-//
-//	startSuperStep := StartSuperStep{
-//		NumWorkers:      uint8(len(c.queryWorkers)),
-//		WorkerDirectory: c.queryWorkersDirectory,
-//		Query:           q,
-//	}
-//
-//	numWorkers := len(c.queryWorkers)
-//	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
-//	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
-//	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
-//	c.allWorkersReady = make(chan superstepDone, 1)
-//	c.restartSuperStepCh = make(chan uint32, numWorkers)
-//
-//	c.query = q
-//
-//	log.Printf(
-//		"StartQuery: computing query %v with %d workers ready!\n", q,
-//		numWorkers,
-//	)
-//
-//	// call workers start query handlers
-//	for _, wClient := range c.queryWorkers {
-//		var result interface{}
-//		wClient.Go(
-//			"Worker.StartQuery", startSuperStep, &result,
-//			c.workerDoneStart,
-//		)
-//	}
-//
-//	go c.blockWorkersReady(len(c.queryWorkers), c.workerDoneStart)
-//
-//	// start query computation
-//	result, err := c.Compute()
-//	if err != nil {
-//		log.Printf("StartQuery: Compute returned error: %v", err)
-//	}
-//
-//	reply.Query = q
-//	reply.Result = result
-//
-//	c.queryWorkers = nil
-//	c.query = Query{}
-//
-//	// return nil for no errors
-//	return nil
-//}
 
 func (c *Coord) blockWorkersReady(
 	numWorkers int, workerDone chan *rpc.Call,
@@ -385,7 +310,7 @@ func (c *Coord) UpdateCheckpoint(
 	return nil
 }
 
-func (c *Coord) Compute() (interface{}, error) {
+func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
 
@@ -407,8 +332,13 @@ func (c *Coord) Compute() (interface{}, error) {
 					"Compute: complete with result %v!\n",
 					result.value,
 				)
+				logger.Printf(
+					"Completed computation with result %v\n",
+					result.value,
+				)
 				return result.value, nil
 			}
+			start := time.Now()
 
 			shouldCheckPoint := c.superStepNumber%c.checkpointFrequency == 0
 			// call workers query handler
@@ -432,6 +362,13 @@ func (c *Coord) Compute() (interface{}, error) {
 				)
 			}
 			go c.blockWorkersReady(numWorkers, c.workerDoneCompute)
+
+			duration := time.Since(start)
+			logger.Printf(
+				"Compute superstep %v took %v s\n",
+				c.superStepNumber, duration.Seconds(),
+			)
+
 			c.superStepNumber += 1
 		}
 	}

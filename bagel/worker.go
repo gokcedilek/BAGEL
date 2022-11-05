@@ -2,14 +2,17 @@ package bagel
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"net"
 	"net/rpc"
+	"os"
 	database "project/database"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
@@ -46,6 +49,8 @@ type Worker struct {
 	NumWorkers      uint32
 	QueryVertex     uint64
 	workerMutex     sync.Mutex
+	logFile         *os.File
+	logger          *log.Logger
 }
 
 type SuperStep struct {
@@ -105,7 +110,8 @@ func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
 	w.Vertices = make(map[uint64]*Vertex)
 	svc := database.GetDynamoClient()
 	// TODO: talk about logical IDs for workers
-	vertices, err := database.GetPartitionForWorkerX(svc,
+	vertices, err := database.GetPartitionForWorkerX(
+		svc,
 		tableName,
 		int(numWorkers),
 		int(w.config.WorkerId),
@@ -181,7 +187,25 @@ func (w *Worker) StartQuery(
 		w.config.WorkerAddr,
 	)
 
-	w.retrieveVertices(startSuperStep.NumWorkers, startSuperStep.Query.TableName)
+	w.retrieveVertices(
+		startSuperStep.NumWorkers, startSuperStep.Query.TableName,
+	)
+
+	// create a log file
+	w.logFile, err = os.OpenFile(
+		fmt.Sprintf("worker%v.log", w.config.WorkerId),
+		os.O_WRONLY|os.O_CREATE, 0644,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	w.logger = log.New(
+		w.logFile, fmt.Sprintf(
+			"Worker%v ",
+			w.config.WorkerId,
+		), log.LstdFlags,
+	)
+
 	return nil
 }
 
@@ -350,11 +374,8 @@ func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
 	log.Printf("ComputeVertices: worker: %v, args: %v\n", w, args)
-	log.Printf(
-		"ComputeVertices: queryType == shortestpath: %v, "+
-			"queryType == pagerank: %v\n", w.Query.QueryType == SHORTEST_PATH,
-		w.Query.QueryType == PAGE_RANK,
-	)
+
+	start := time.Now()
 
 	// save the checkpoint before running superstep S
 	if args.IsCheckpoint && !args.IsRestart {
@@ -391,7 +412,7 @@ func (w *Worker) ComputeVertices(
 			w.mapMessagesToWorkers(messages)
 			if vertex.IsActive {
 				hasActiveVertex = true
-			}
+			} 
 		}
 
 		vertexType := PAGE_RANK
@@ -408,6 +429,10 @@ func (w *Worker) ComputeVertices(
 				args.SuperStepNum,
 			)
 			resp.CurrentValue = vertex.CurrentValue
+
+			w.logger.Printf(
+				"Completed computation with result %v\n", resp.CurrentValue,
+			)
 		}
 	}
 
@@ -461,6 +486,12 @@ func (w *Worker) ComputeVertices(
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
 
+	duration := time.Since(start)
+	w.logger.Printf(
+		"Compute superstep %v took %v s\n", resp.SuperStepNum,
+		duration.Seconds(),
+	)
+
 	return nil
 }
 
@@ -495,7 +526,7 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 	w.workerMutex.Lock()
 	for _, msg := range msgs {
 		destWorker := util.GetFlooredModulo(
-			int64(util.HashId(msg.DestVertexId)), int64(w.NumWorkers),
+			util.HashId(msg.DestVertexId), uint64(w.NumWorkers),
 		)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(
 			w.SuperStep.Outgoing[uint32(destWorker)], msg,
