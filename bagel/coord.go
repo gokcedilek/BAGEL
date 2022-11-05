@@ -131,7 +131,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	logger := log.New(logFile, "Coord ", log.LstdFlags)
 
 	// start query computation
-	result, err := c.Compute(logger) 
+	result, err := c.Compute(logger)
 	if err != nil {
 		log.Printf("StartQuery: Compute returned error: %v\n", err)
 	}
@@ -139,7 +139,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	reply.Query = q
 
-	// create result object in gRPC proto format (
+	// cast type of result to float64
 	//note: we cannot convert interface{} to float64,
 	//need to identify the runtime type of interface{} first)
 	log.Printf("type of result: %T\n", result)
@@ -336,6 +336,10 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 					"Completed computation with result %v\n",
 					result.value,
 				)
+				if result.value == nil {
+					// target vertex does not exist
+					return -1, nil
+				}
 				return result.value, nil
 			}
 			start := time.Now()
