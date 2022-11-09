@@ -14,6 +14,6 @@ func HashId(vertexId uint64) uint64 {
 	return uint64(algorithm.Sum64())
 }
 
-func GetFlooredModulo(a int64, b int64) int64 {
+func GetFlooredModulo(a uint64, b uint64) uint64 {
 	return ((a % b) + b) % b
 }
