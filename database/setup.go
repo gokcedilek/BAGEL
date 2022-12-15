@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"project/util"
 	"strconv"
@@ -71,7 +72,7 @@ func CreateTable(
 }
 
 func AddGraph(svc *dynamodb.Client, filePath string, tableName string) {
-	graph := ParseInputGraph(filePath)
+	graph := ParseInputGraph(filePath, true)
 	vertices := graphToVertices(graph)
 	batches := CreateBatches(vertices)
 	BatchInsertVertices(svc, tableName, batches)
@@ -97,7 +98,7 @@ func waitForTable(ctx context.Context, db *dynamodb.Client, tn string) error {
 	return err
 }
 
-func ParseInputGraph(filePath string) map[uint64][]uint64 {
+func ParseInputGraph(filePath string, isCSV bool) map[uint64][]uint64 {
 	graph := make(map[uint64][]uint64)
 
 	file, err := os.Open(filePath)
@@ -107,6 +108,10 @@ func ParseInputGraph(filePath string) map[uint64][]uint64 {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	delimiter := "\t"
+	if isCSV {
+		delimiter = ","
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -115,7 +120,7 @@ func ParseInputGraph(filePath string) map[uint64][]uint64 {
 			continue
 		}
 
-		edge := strings.Split(line, ",")
+		edge := strings.Split(line, delimiter)
 		src, _ := strconv.ParseUint(edge[0], 10, 32)
 		dest, _ := strconv.ParseUint(edge[1], 10, 32)
 
@@ -149,7 +154,7 @@ func WriteGraphToFile(fileName string, graph map[uint64][]uint64) error {
 	return nil
 }
 
-func ReduceGraphToXNodes(graph map[uint64][]uint64, desiredNumNodes int) map[uint64][]uint64 {
+func ReduceGraphToXNodes(graph map[uint64][]uint64, desiredNumNodes int, degree int) map[uint64][]uint64 {
 	if len(graph) < desiredNumNodes {
 		fmt.Errorf("graph has %d nodes which is less than the desired number of %d nodes",
 			len(graph), desiredNumNodes)
@@ -158,29 +163,91 @@ func ReduceGraphToXNodes(graph map[uint64][]uint64, desiredNumNodes int) map[uin
 
 	reducedGraph := make(map[uint64][]uint64)
 	deletedNodes := make(map[uint64]bool)
-	numNodesToBeDeleted := len(graph) - desiredNumNodes
+	n := len(graph)
+	numNodesToBeDeleted := n - desiredNumNodes
 
-	// naive implementation of deleting first
-	for v, _ := range graph {
-		deletedNodes[v] = true
-		numNodesToBeDeleted++
-		if numNodesToBeDeleted == desiredNumNodes {
-			break
-		}
-	}
-
-	// copy & delete edges that exist
+	// delete first n nodes
 	for v, edges := range graph {
 		if isDeletedNode(v, deletedNodes) {
 			continue
 		}
+		deletedNodes[v] = true
+		numNodesToBeDeleted--
 
+		for _, e := range edges {
+			if !isDeletedNode(e, deletedNodes) {
+				deletedNodes[e] = true
+				numNodesToBeDeleted--
+				if numNodesToBeDeleted == 0 {
+					break
+				}
+			}
+		}
+
+		if numNodesToBeDeleted == 0 {
+			break
+		}
+	}
+	// copy nodes that aren't deleted & delete edges that exist
+	for v, edges := range graph {
+		if isDeletedNode(v, deletedNodes) {
+			continue
+		}
 		n := len(edges)
 		reducedGraph[v] = make([]uint64, n, n)
 		copy(reducedGraph[v], edges)
 		reducedGraph[v] = removeEdgesWithDeletedDest(reducedGraph[v], deletedNodes)
 	}
+
+	PostProcessReducedGraph(reducedGraph, degree)
+
 	return reducedGraph
+}
+
+func PostProcessReducedGraph(graph map[uint64][]uint64, degree int) {
+	edges := getSliceOfEdges(graph)
+	n := len(edges)
+
+	for edge := range graph {
+		currDegree := len(graph[edge])
+		if degree <= currDegree {
+			continue
+		}
+
+		requiredDegree := degree - currDegree
+		newDegree := rand.Int() % requiredDegree
+		if newDegree == 0 {
+			newDegree += 1
+		}
+		mapOfEdges := getMapOfOutgoingEdges(graph[edge])
+		for i := 0; i < newDegree; i++ {
+			newEdge := edges[rand.Int()%n]
+			if _, ok := mapOfEdges[newEdge]; !ok {
+				graph[edge] = append(graph[edge], newEdge)
+				mapOfEdges[newEdge] = true
+			} else {
+				i--
+			}
+		}
+	}
+}
+
+func getMapOfOutgoingEdges(edges []uint64) map[uint64]bool {
+	mapOfEdges := make(map[uint64]bool)
+	for _, edge := range edges {
+		mapOfEdges[edge] = true
+	}
+	return mapOfEdges
+}
+
+func getSliceOfEdges(graph map[uint64][]uint64) []uint64 {
+	edges := make([]uint64, len(graph))
+	i := 0
+	for edge := range graph {
+		edges[i] = edge
+	}
+
+	return edges
 }
 
 func removeEdge(edges []uint64, idx int) []uint64 {
@@ -205,7 +272,7 @@ func removeEdgesWithDeletedDest(edges []uint64, deletedNodes map[uint64]bool) []
 
 func isDeletedNode(node uint64, deleted map[uint64]bool) bool {
 	_, ok := deleted[node]
-	return !ok
+	return ok
 }
 
 func graphToVertices(graph Graph) []Vertex {
