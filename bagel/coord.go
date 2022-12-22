@@ -64,7 +64,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	//	// todo
 	//}
 	// todo replace with workerCount from client
-	testWorkerCount := 2
+	testWorkerCount := 3
 	c.assignQueryWorkers(testWorkerCount)
 
 	// initialize workerReady map
@@ -81,7 +81,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	fmt.Printf("query replicas: %v\n", c.queryReplicas)
 
 	//return nil, nil
-	return &reply, nil
+	//return &reply, nil
 
 	// initialize worker directory
 
@@ -129,8 +129,9 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	)
 
 	// call workers start query handlers
-	for _, client := range c.queryWorkersCallbook {
+	for logicalId, client := range c.queryWorkersCallbook {
 		var result interface{}
+		startSuperStep.WorkerLogicalId = logicalId
 		client.Go(
 			"Worker.StartQuery", startSuperStep, &result,
 			c.workerDoneStart,
@@ -178,6 +179,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	c.queryWorkers = nil
 	c.queryReplicas = nil
+	c.queryWorkersCallbook = nil
 	c.query = Query{}
 
 	// return nil for no errors
@@ -252,6 +254,9 @@ func NewCoord() *Coord {
 func (c *Coord) assignQueryWorkers(workerCount int) {
 	// assign logical ids
 	// assign main/replica
+	c.queryWorkers = make(WorkerPool)
+	c.queryReplicas = make(WorkerPool)
+	c.queryWorkersCallbook = make(WorkerCallBook)
 
 	if len(c.workers) < workerCount*2 {
 		log.Fatalf(
@@ -304,17 +309,6 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				workerNode.WorkerConfigId, logicalId,
 				c.queryReplicas[logicalId].IsReplica,
 			)
-
-			client, err := util.DialRPC(workerNode.WorkerListenAddr)
-
-			if err != nil {
-				log.Fatalf(
-					"cannot create client for worker %v addr %v\n",
-					workerNode.WorkerConfigId, workerNode.WorkerListenAddr,
-				)
-			}
-
-			c.queryWorkersCallbook[logicalId] = client
 		}
 
 		// assign the same logical id for main & replica

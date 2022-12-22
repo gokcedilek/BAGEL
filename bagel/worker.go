@@ -48,6 +48,7 @@ type Worker struct {
 	// workerCallBook  WorkerPool
 	workerCallBook WorkerCallBook
 	Replica        WorkerNode
+	LogicalId      uint32
 	NumWorkers     uint32
 	QueryVertex    uint64
 	workerMutex    sync.Mutex
@@ -72,12 +73,11 @@ func NewWorker(config WorkerConfig) *Worker {
 	config.LocalFCheckAckLocalAddress = util.IPEmptyPortOnly(config.FCheckAckLocalAddress)
 
 	return &Worker{
-		config:         config,
-		SuperStep:      NewSuperStep(),
-		NextSuperStep:  NewSuperStep(),
-		Vertices:       make(map[uint64]*Vertex),
-		workerCallBook: make(map[uint32]*rpc.Client),
-		// workerCallBook:  make(map[uint32]WorkerNode),
+		config:          config,
+		SuperStep:       NewSuperStep(),
+		NextSuperStep:   NewSuperStep(),
+		Vertices:        make(map[uint64]*Vertex),
+		workerCallBook:  make(map[uint32]*rpc.Client),
 		workerDirectory: make(map[uint32]string),
 	}
 }
@@ -109,7 +109,9 @@ func NewSuperStep() *SuperStep {
 	}
 }
 
-func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
+func (w *Worker) retrieveVertices(
+	numWorkers uint8, tableName string,
+) {
 	w.Vertices = make(map[uint64]*Vertex)
 	svc := database.GetDynamoClient()
 	// TODO: talk about logical IDs for workers
@@ -117,7 +119,7 @@ func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
 		svc,
 		tableName,
 		int(numWorkers),
-		int(w.config.WorkerId),
+		int(w.LogicalId),
 	)
 	log.Printf(
 		"retrieveVertices: retrieved %v vertices for worker %v from the"+
@@ -163,7 +165,7 @@ func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
 			" from the"+
 			" db!\n",
 		len(w.Vertices),
-		w.config.WorkerId,
+		w.LogicalId,
 	)
 }
 
@@ -173,8 +175,9 @@ func (w *Worker) StartQuery(
 
 	log.Printf("StartQuery: startSuperStep: %v\n", startSuperStep)
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
-	//w.workerDirectory = startSuperSte//p.WorkerDirectory
+	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
+	w.LogicalId = startSuperStep.WorkerLogicalId
 
 	// setup local checkpoints storage for the worker
 	err := w.initializeCheckpoints()
@@ -234,8 +237,8 @@ func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
 	w.NumWorkers = uint32(req.NumWorkers)
-	//w.UpdateWorkerCallBook(req.WorkerDirectory)
-	//w.workerCallBook = make(map[uint32]WorkerNode)
+	w.UpdateWorkerCallBook(req.WorkerDirectory)
+	w.workerCallBook = make(WorkerCallBook)
 	w.Query = req.Query
 
 	log.Printf(
@@ -460,7 +463,7 @@ func (w *Worker) ComputeVertices(
 	}
 
 	for worker, msgs := range w.SuperStep.Outgoing {
-		if worker == w.config.WorkerId {
+		if worker == w.LogicalId {
 			w.workerMutex.Lock()
 			for _, msg := range msgs {
 				w.NextSuperStep.Messages[msg.DestVertexId] = append(
@@ -476,7 +479,7 @@ func (w *Worker) ComputeVertices(
 		if _, exists := w.workerCallBook[worker]; !exists {
 			var err error
 			// todo
-			//w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
+			w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
 
 			if err != nil {
 				log.Printf(
@@ -549,9 +552,11 @@ func (w *Worker) switchToNextSuperStep() error {
 func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 	w.workerMutex.Lock()
 	for _, msg := range msgs {
+		log.Printf("worker %v message: %v\n", w.config.WorkerId, msg)
 		destWorker := util.GetFlooredModulo(
 			util.HashId(msg.DestVertexId), uint64(w.NumWorkers),
 		)
+		log.Printf("dst worker: %v\n", destWorker)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(
 			w.SuperStep.Outgoing[uint32(destWorker)], msg,
 		)
@@ -559,11 +564,11 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 	w.workerMutex.Unlock()
 }
 
-//func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
-//	for workerId, workerAddr := range newDirectory {
-//		if w.workerDirectory[workerId] != workerAddr {
-//			w.workerDirectory[workerId] = workerAddr
-//			delete(w.workerCallBook, workerId)
-//		}
-//	}
-//}
+func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
+	for workerId, workerAddr := range newDirectory {
+		if w.workerDirectory[workerId] != workerAddr {
+			w.workerDirectory[workerId] = workerAddr
+			delete(w.workerCallBook, workerId)
+		}
+	}
+}
