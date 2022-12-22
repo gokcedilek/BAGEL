@@ -45,12 +45,14 @@ type Worker struct {
 	Query           Query
 	Vertices        map[uint64]*Vertex
 	workerDirectory WorkerDirectory
-	workerCallBook  WorkerCallBook
-	NumWorkers      uint32
-	QueryVertex     uint64
-	workerMutex     sync.Mutex
-	logFile         *os.File
-	logger          *log.Logger
+	// workerCallBook  WorkerPool
+	workerCallBook WorkerCallBook
+	Replica        WorkerNode
+	NumWorkers     uint32
+	QueryVertex    uint64
+	workerMutex    sync.Mutex
+	logFile        *os.File
+	logger         *log.Logger
 }
 
 type SuperStep struct {
@@ -70,11 +72,12 @@ func NewWorker(config WorkerConfig) *Worker {
 	config.LocalFCheckAckLocalAddress = util.IPEmptyPortOnly(config.FCheckAckLocalAddress)
 
 	return &Worker{
-		config:          config,
-		SuperStep:       NewSuperStep(),
-		NextSuperStep:   NewSuperStep(),
-		Vertices:        make(map[uint64]*Vertex),
-		workerCallBook:  make(map[uint32]*rpc.Client),
+		config:         config,
+		SuperStep:      NewSuperStep(),
+		NextSuperStep:  NewSuperStep(),
+		Vertices:       make(map[uint64]*Vertex),
+		workerCallBook: make(map[uint32]*rpc.Client),
+		// workerCallBook:  make(map[uint32]WorkerNode),
 		workerDirectory: make(map[uint32]string),
 	}
 }
@@ -170,7 +173,7 @@ func (w *Worker) StartQuery(
 
 	log.Printf("StartQuery: startSuperStep: %v\n", startSuperStep)
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
-	w.workerDirectory = startSuperStep.WorkerDirectory
+	//w.workerDirectory = startSuperSte//p.WorkerDirectory
 	w.Query = startSuperStep.Query
 
 	// setup local checkpoints storage for the worker
@@ -209,12 +212,30 @@ func (w *Worker) StartQuery(
 	return nil
 }
 
+//func (w *Worker) HandleFailover(
+//	req PromotedWorker, reply *PromotedWorker,
+//) error {
+//	// todo implementation
+//	w.workerCallBook[req.LogicalId] = req.Worker
+//
+//	*reply = req
+//	return nil
+//}
+
+//func (w *Worker) UpdateReplica(
+//	req PromotedWorker, reply *PromotedWorker,
+//) error {
+//	w.Replica = req.Worker
+//	*reply = req
+//	return nil
+//}
+
 func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
 	w.NumWorkers = uint32(req.NumWorkers)
-	w.UpdateWorkerCallBook(req.WorkerDirectory)
-	w.workerCallBook = make(map[uint32]*rpc.Client)
+	//w.UpdateWorkerCallBook(req.WorkerDirectory)
+	//w.workerCallBook = make(map[uint32]WorkerNode)
 	w.Query = req.Query
 
 	log.Printf(
@@ -345,9 +366,11 @@ func (w *Worker) Start() error {
 	)
 
 	workerNode := WorkerNode{
-		w.config.WorkerId, w.config.WorkerAddr,
-		w.config.FCheckAckLocalAddress, w.config.WorkerListenAddr,
+		w.config.WorkerId, math.MaxInt32, w.config.WorkerAddr,
+		w.config.FCheckAckLocalAddress, w.config.WorkerListenAddr, false,
 	}
+	// todo discuss with Ryan -- we cant pass nil through rpc,
+	// should we just rely on workerdirectory to hold rpc clients?
 
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
@@ -412,7 +435,7 @@ func (w *Worker) ComputeVertices(
 			w.mapMessagesToWorkers(messages)
 			if vertex.IsActive {
 				hasActiveVertex = true
-			} 
+			}
 		}
 
 		vertexType := PAGE_RANK
@@ -452,7 +475,8 @@ func (w *Worker) ComputeVertices(
 
 		if _, exists := w.workerCallBook[worker]; !exists {
 			var err error
-			w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
+			// todo
+			//w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
 
 			if err != nil {
 				log.Printf(
@@ -535,11 +559,11 @@ func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 	w.workerMutex.Unlock()
 }
 
-func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
-	for workerId, workerAddr := range newDirectory {
-		if w.workerDirectory[workerId] != workerAddr {
-			w.workerDirectory[workerId] = workerAddr
-			delete(w.workerCallBook, workerId)
-		}
-	}
-}
+//func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
+//	for workerId, workerAddr := range newDirectory {
+//		if w.workerDirectory[workerId] != workerAddr {
+//			w.workerDirectory[workerId] = workerAddr
+//			delete(w.workerCallBook, workerId)
+//		}
+//	}
+//}

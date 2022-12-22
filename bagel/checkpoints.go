@@ -126,6 +126,8 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		)
 	}
 
+	// todo send data to replica..
+
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)
 	util.CheckErr(

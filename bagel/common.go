@@ -1,8 +1,6 @@
 package bagel
 
-import (
-	"net/rpc"
-)
+import "net/rpc"
 
 // constants are used as msgType for the messages
 const (
@@ -13,10 +11,13 @@ const (
 )
 
 type WorkerNode struct {
-	WorkerId         uint32
+	WorkerConfigId   uint32
+	WorkerLogicalId  uint32
 	WorkerAddr       string
 	WorkerFCheckAddr string
 	WorkerListenAddr string
+	IsReplica        bool
+	//Client           *rpc.Client
 }
 
 type StartSuperStep struct {
@@ -45,6 +46,12 @@ type RestartSuperStep struct {
 	Query           Query
 }
 
+//type UpdateMainReplica struct {
+//	LogicalId  uint32
+//	Worker
+//	//WorkerPair FailoverQueryWorker
+//}
+
 type CheckpointMsg struct {
 	SuperStepNumber uint64
 	WorkerId        uint32
@@ -70,3 +77,19 @@ type WorkerDirectory map[uint32]string
 
 // WorkerCallBook maps worker ids to rpc clients (connections)
 type WorkerCallBook map[uint32]*rpc.Client
+
+//type FailoverQueryWorker struct {
+//	main    *rpc.Client
+//	replica *rpc.Client
+//}
+
+type PromotedWorker struct {
+	LogicalId uint32
+	Worker    WorkerNode
+}
+
+//type FailoverWorkerCallBook map[uint32]FailoverQueryWorker
+
+type WorkerPool map[uint32]WorkerNode
+
+//type

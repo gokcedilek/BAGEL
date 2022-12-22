@@ -20,6 +20,39 @@ Possible operations are:
 - `test` to run the unit test for the worker
 - `clean` to remove the build files and clean the cached test results
 
+### Run the code with the React client & the local DynamoDB client (LATEST!)
+
+- In the `client` directory, run `npm run start`
+- In the `envoy` directory, run
+  - `docker run --name bagel-envoy -p 
+8080:8080 -p 9091:9091 bagel-envoy` if
+    this is your first time running the project
+  - `docker start bagel-envoy` if the
+    container exists
+- In the directory where you installed the
+  local DynamoDB client (see [here]
+  (https://github.com/ryanjhkim/bagel/tree/main
+  /database)), run `java -Djava.library.path=.
+/DynamoDBLocal_lib -jar DynamoDBLocal.jar 
+-sharedDb` (keep this running)
+- In the `bagel` directory, run `make all`
+  followed by `./bin/coord` and any number of
+  worker commands, `, `, etc.
+
+### Setup the local DynamoDB client (LATEST!)
+
+- After you run the local DynamoDB client, you
+  can upload graphs to the local database with
+  `./bin/database setup <table name> <path to 
+graph file>`
+  - example to upload the test graph: `./bin/database setup gokce-test-db testGraph.txt`
+- You can then run CLI queries on the graph,
+  such as the ones [here](https://dynobase.dev/dynamodb-cli-query-examples/)
+  - check tables: aws dynamodb list-tables --endpoint-url http://localhost:8000
+  - scan table: aws dynamodb scan --table-name gokce-test-db --endpoint-url http://localhost:8000
+  - get item from table: aws dynamodb get-item
+    --table-name gokce-test-db --key '{"ID": {"N": "5"}}' --consistent-read --endpoint-url http://localhost:8000
+
 ### Running the code
 
 - After building, the binary files will be found in the `./bin` folder

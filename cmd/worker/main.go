@@ -41,7 +41,7 @@ func main() {
 			invalidInput = true
 		} else {
 			workerId = id
-			// logs all start with WorkerId from config
+			// logs all start with WorkerConfigId from config
 			log.SetPrefix("Worker " + os.Args[1] + ": ")
 		}
 	}
