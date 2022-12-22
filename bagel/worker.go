@@ -48,6 +48,7 @@ type Worker struct {
 	// workerCallBook  WorkerPool
 	workerCallBook WorkerCallBook
 	Replica        WorkerNode
+	ReplicaClient  *rpc.Client
 	LogicalId      uint32
 	NumWorkers     uint32
 	QueryVertex    uint64
@@ -178,6 +179,8 @@ func (w *Worker) StartQuery(
 	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
 	w.LogicalId = startSuperStep.WorkerLogicalId
+	replicaClient, err := util.DialRPC(startSuperStep.ReplicaAddr)
+	w.ReplicaClient = replicaClient
 
 	// setup local checkpoints storage for the worker
 	err := w.initializeCheckpoints()
@@ -520,6 +523,11 @@ func (w *Worker) ComputeVertices(
 	)
 
 	return nil
+}
+
+func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
+	_, err := w.storeCheckpoint(checkpoint)
+	util.CheckErr(err, "Failed to store checkpoint for replica")
 }
 
 func (w *Worker) PutBatchedMessages(

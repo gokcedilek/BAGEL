@@ -132,6 +132,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	for logicalId, client := range c.queryWorkersCallbook {
 		var result interface{}
 		startSuperStep.WorkerLogicalId = logicalId
+		startSuperStep.ReplicaAddr = c.queryReplicas[logicalId].WorkerListenAddr
 		client.Go(
 			"Worker.StartQuery", startSuperStep, &result,
 			c.workerDoneStart,

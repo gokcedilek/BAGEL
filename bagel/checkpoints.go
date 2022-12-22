@@ -85,6 +85,25 @@ func (w *Worker) checkpoint(superStepNum uint64) Checkpoint {
 	}
 }
 
+func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
+	if w.ReplicaClient == nil {
+		client, err := util.DialRPC(w.Replica.WorkerListenAddr)
+
+		if err != nil {
+			log.Fatalf("worker could not connect to replica\n")
+		}
+
+		w.ReplicaClient = client
+	}
+
+	var response Checkpoint
+	err := w.ReplicaClient.Call("Worker.SyncReplica", checkpoint, &response)
+	util.CheckErr(
+		err, "Sync Replica: Worker %v could not sync with replica: %v\n",
+		w.config.WorkerId, err,
+	)
+}
+
 func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	db, err := w.getConnection()
 	if err != nil {
@@ -127,6 +146,9 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 	}
 
 	// todo send data to replica..
+	if w.Replica != (WorkerNode{}) {
+		w.storeCheckpointReplica(checkpoint)
+	}
 
 	// notify coord about the latest checkpoint saved
 	coordClient, err := util.DialRPC(w.config.CoordAddr)

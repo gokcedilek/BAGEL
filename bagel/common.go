@@ -24,6 +24,7 @@ type StartSuperStep struct {
 	NumWorkers      uint8
 	WorkerDirectory WorkerDirectory
 	WorkerLogicalId uint32
+	ReplicaAddr     string
 	Query           Query
 }
 
