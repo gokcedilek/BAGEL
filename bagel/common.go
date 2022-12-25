@@ -74,6 +74,9 @@ type QueryResult struct {
 	// float64 for pagerank, int for shortest path
 }
 
+type EndQuery struct {
+}
+
 // WorkerDirectory maps worker ids to address (string)
 type WorkerDirectory map[uint32]string
 

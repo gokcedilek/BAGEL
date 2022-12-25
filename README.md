@@ -30,14 +30,11 @@ Possible operations are:
   - `docker start bagel-envoy` if the
     container exists
 - In the directory where you installed the
-  local DynamoDB client (see [here]
-  (https://github.com/ryanjhkim/bagel/tree/main
-  /database)), run `java -Djava.library.path=.
-/DynamoDBLocal_lib -jar DynamoDBLocal.jar 
+  local DynamoDB client (see [here](https://github.com/ryanjhkim/bagel/tree/main/database)), run `java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar 
 -sharedDb` (keep this running)
 - In the `bagel` directory, run `make all`
   followed by `./bin/coord` and any number of
-  worker commands, `, `, etc.
+  worker commands, `./bin/worker 0`, `./bin/worker 1`, etc.
 
 ### Setup the local DynamoDB client (LATEST!)
 
@@ -47,7 +44,7 @@ Possible operations are:
 graph file>`
   - example to upload the test graph: `./bin/database setup gokce-test-db testGraph.txt`
 - You can then run CLI queries on the graph,
-  such as the ones [here](https://dynobase.dev/dynamodb-cli-query-examples/)
+  such as the ones [here](https://dynobase.dev/dynamodb-cli-query-examples/), to test things out
   - check tables: aws dynamodb list-tables --endpoint-url http://localhost:8000
   - scan table: aws dynamodb scan --table-name gokce-test-db --endpoint-url http://localhost:8000
   - get item from table: aws dynamodb get-item

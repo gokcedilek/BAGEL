@@ -64,7 +64,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	//	// todo
 	//}
 	// todo replace with workerCount from client
-	testWorkerCount := 3
+	testWorkerCount := 2
 	c.assignQueryWorkers(testWorkerCount)
 
 	// initialize workerReady map
@@ -146,7 +146,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	// create a log file
 	logFile, err := os.OpenFile(
-		"coord.log", os.O_WRONLY|os.O_CREATE, 0644,
+		"coord.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644,
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -550,6 +550,70 @@ func (c *Coord) UpdateCheckpoint(
 	return nil
 }
 
+// TODO we need a framework to invoke a given RPC on all workers and wait for
+// them to finish, and reuse that framework. function: pass in the RPC name,
+//return the results back to the caller
+//func (c *Coord) endQuery(
+//	method string, params interface{},
+//	workerDoneCh chan *rpc.Call
+//) {
+//	for _, wClient := range c.queryWorkersCallbook {
+//		var result interface{}
+//
+//		wClient.Go(
+//			fmt.Sprintf("Worker.%s", method), params, &result,
+//			workerDoneCh)
+//	}
+//
+//	readyWorkerCounter := 0
+//	numWorkers := len(c.queryWorkers)
+//
+//	for {
+//		select {
+//		case call := <-workerDoneCh:
+//			log.Printf("Coord endQuery call done: %v\n", call)
+//			//reply := call.Reply
+//			readyWorkerCounter++
+//			if readyWorkerCounter == numWorkers {
+//				log.Printf("Coord endQuery all %v workers finished query\n",
+//					readyWorkerCounter)
+//				return
+//			}
+//		}
+//	}
+//}
+func (c *Coord) endQuery(params EndQuery) {
+	readyWorkerCounter := 0
+	numWorkers := len(c.queryWorkers)
+	workerDoneCh := make(chan *rpc.Call, numWorkers)
+
+	for wId, wClient := range c.queryWorkersCallbook {
+		var result EndQuery
+
+		wClient.Go(
+			fmt.Sprintf("Worker.EndQuery"), params, &result,
+			workerDoneCh,
+		)
+		log.Printf("Coord endQuery: called EndQuery on worker %v\n", wId)
+	}
+
+	for {
+		select {
+		case call := <-workerDoneCh:
+			log.Printf("Coord endQuery call done: %v\n", call)
+			//reply := call.Reply
+			readyWorkerCounter++
+			if readyWorkerCounter == numWorkers {
+				log.Printf(
+					"Coord endQuery all %v workers finished query\n",
+					readyWorkerCounter,
+				)
+				return
+			}
+		}
+	}
+}
+
 func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
@@ -576,6 +640,15 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 					"Completed computation with result %v\n",
 					result.value,
 				)
+				// TODO RPC to instruct all workers that the computation
+				// finished
+				endQuery := EndQuery{}
+				go c.endQuery(endQuery)
+				log.Printf(
+					"Compute: finished endQuery, sending result %v\n",
+					result.value,
+				)
+
 				if result.value == nil {
 					// target vertex does not exist
 					return -1, nil

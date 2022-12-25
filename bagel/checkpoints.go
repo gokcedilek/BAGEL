@@ -102,6 +102,7 @@ func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
 		err, "Sync Replica: Worker %v could not sync with replica: %v\n",
 		w.config.WorkerId, err,
 	)
+	return nil
 }
 
 func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {

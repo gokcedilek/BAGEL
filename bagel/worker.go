@@ -183,7 +183,7 @@ func (w *Worker) StartQuery(
 	w.ReplicaClient = replicaClient
 
 	// setup local checkpoints storage for the worker
-	err := w.initializeCheckpoints()
+	err = w.initializeCheckpoints()
 	util.CheckErr(
 		err, "StartQuery: Worker %v could not setup checkpoints db\n",
 		w.config.WorkerId,
@@ -203,7 +203,7 @@ func (w *Worker) StartQuery(
 	// create a log file
 	w.logFile, err = os.OpenFile(
 		fmt.Sprintf("worker%v.log", w.config.WorkerId),
-		os.O_WRONLY|os.O_CREATE, 0644,
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644,
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -399,6 +399,16 @@ func (w *Worker) Start() error {
 	return nil
 }
 
+func (w *Worker) EndQuery(req EndQuery, reply *EndQuery) error {
+	// TODO shut down resources
+	log.Printf("Worker %v in endQuery\n", w.LogicalId)
+	w.logger = nil
+	w.logFile.Close()
+
+	*reply = req
+	return nil
+}
+
 func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
@@ -525,10 +535,10 @@ func (w *Worker) ComputeVertices(
 	return nil
 }
 
-func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
-	_, err := w.storeCheckpoint(checkpoint)
-	util.CheckErr(err, "Failed to store checkpoint for replica")
-}
+//func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
+//	_, err := w.storeCheckpoint(checkpoint)
+//	util.CheckErr(err, "Failed to store checkpoint for replica")
+//}
 
 func (w *Worker) PutBatchedMessages(
 	batch BatchedMessages, resp *Message,
