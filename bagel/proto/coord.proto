@@ -21,6 +21,14 @@ message QueryResult {
   string Error = 3;
 }
 
+message SensorRequest {
+}
+
+message SensorResponse {
+  int64 value = 1;
+}
+
 service Coord {
   rpc StartQuery(Query) returns (QueryResult) {};
+  rpc TempSensor(SensorRequest) returns (stream SensorResponse) {};
 }

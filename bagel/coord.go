@@ -187,6 +187,25 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	return &reply, nil
 }
 
+func (c *Coord) TempSensor(
+	req *coordgRPC.SensorRequest,
+	stream coordgRPC.Coord_TempSensorServer,
+) error {
+
+	for {
+		time.Sleep(time.Second * 5)
+
+		data := int64(10)
+		err := stream.Send(&coordgRPC.SensorResponse{Value: data})
+		if err != nil {
+			log.Printf("Coord TempSensor error: %v\n", err)
+		} else {
+			log.Printf("Coord TempSensor sent data: %v\n", data)
+		}
+	}
+	return nil
+}
+
 /* end of proto config */
 
 type CoordConfig struct {

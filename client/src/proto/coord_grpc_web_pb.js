@@ -131,5 +131,61 @@ proto.coord.CoordPromiseClient.prototype.startQuery =
 };
 
 
+/**
+ * @const
+ * @type {!grpc.web.MethodDescriptor<
+ *   !proto.coord.SensorRequest,
+ *   !proto.coord.SensorResponse>}
+ */
+const methodDescriptor_Coord_TempSensor = new grpc.web.MethodDescriptor(
+  '/coord.Coord/TempSensor',
+  grpc.web.MethodType.SERVER_STREAMING,
+  proto.coord.SensorRequest,
+  proto.coord.SensorResponse,
+  /**
+   * @param {!proto.coord.SensorRequest} request
+   * @return {!Uint8Array}
+   */
+  function(request) {
+    return request.serializeBinary();
+  },
+  proto.coord.SensorResponse.deserializeBinary
+);
+
+
+/**
+ * @param {!proto.coord.SensorRequest} request The request proto
+ * @param {?Object<string, string>=} metadata User defined
+ *     call metadata
+ * @return {!grpc.web.ClientReadableStream<!proto.coord.SensorResponse>}
+ *     The XHR Node Readable Stream
+ */
+proto.coord.CoordClient.prototype.tempSensor =
+    function(request, metadata) {
+  return this.client_.serverStreaming(this.hostname_ +
+      '/coord.Coord/TempSensor',
+      request,
+      metadata || {},
+      methodDescriptor_Coord_TempSensor);
+};
+
+
+/**
+ * @param {!proto.coord.SensorRequest} request The request proto
+ * @param {?Object<string, string>=} metadata User defined
+ *     call metadata
+ * @return {!grpc.web.ClientReadableStream<!proto.coord.SensorResponse>}
+ *     The XHR Node Readable Stream
+ */
+proto.coord.CoordPromiseClient.prototype.tempSensor =
+    function(request, metadata) {
+  return this.client_.serverStreaming(this.hostname_ +
+      '/coord.Coord/TempSensor',
+      request,
+      metadata || {},
+      methodDescriptor_Coord_TempSensor);
+};
+
+
 module.exports = proto.coord;
 

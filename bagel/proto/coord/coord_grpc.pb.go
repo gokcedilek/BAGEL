@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoordClient interface {
 	StartQuery(ctx context.Context, in *Query, opts ...grpc.CallOption) (*QueryResult, error)
+	TempSensor(ctx context.Context, in *SensorRequest, opts ...grpc.CallOption) (Coord_TempSensorClient, error)
 }
 
 type coordClient struct {
@@ -42,11 +43,44 @@ func (c *coordClient) StartQuery(ctx context.Context, in *Query, opts ...grpc.Ca
 	return out, nil
 }
 
+func (c *coordClient) TempSensor(ctx context.Context, in *SensorRequest, opts ...grpc.CallOption) (Coord_TempSensorClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Coord_ServiceDesc.Streams[0], "/coord.Coord/TempSensor", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &coordTempSensorClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Coord_TempSensorClient interface {
+	Recv() (*SensorResponse, error)
+	grpc.ClientStream
+}
+
+type coordTempSensorClient struct {
+	grpc.ClientStream
+}
+
+func (x *coordTempSensorClient) Recv() (*SensorResponse, error) {
+	m := new(SensorResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // CoordServer is the server API for Coord service.
 // All implementations must embed UnimplementedCoordServer
 // for forward compatibility
 type CoordServer interface {
 	StartQuery(context.Context, *Query) (*QueryResult, error)
+	TempSensor(*SensorRequest, Coord_TempSensorServer) error
 	mustEmbedUnimplementedCoordServer()
 }
 
@@ -56,6 +90,9 @@ type UnimplementedCoordServer struct {
 
 func (UnimplementedCoordServer) StartQuery(context.Context, *Query) (*QueryResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartQuery not implemented")
+}
+func (UnimplementedCoordServer) TempSensor(*SensorRequest, Coord_TempSensorServer) error {
+	return status.Errorf(codes.Unimplemented, "method TempSensor not implemented")
 }
 func (UnimplementedCoordServer) mustEmbedUnimplementedCoordServer() {}
 
@@ -88,6 +125,27 @@ func _Coord_StartQuery_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Coord_TempSensor_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SensorRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(CoordServer).TempSensor(m, &coordTempSensorServer{stream})
+}
+
+type Coord_TempSensorServer interface {
+	Send(*SensorResponse) error
+	grpc.ServerStream
+}
+
+type coordTempSensorServer struct {
+	grpc.ServerStream
+}
+
+func (x *coordTempSensorServer) Send(m *SensorResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Coord_ServiceDesc is the grpc.ServiceDesc for Coord service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -100,6 +158,12 @@ var Coord_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Coord_StartQuery_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "TempSensor",
+			Handler:       _Coord_TempSensor_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "coord.proto",
 }
