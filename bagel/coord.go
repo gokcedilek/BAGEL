@@ -120,6 +120,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	c.workerDoneFailover = make(chan *rpc.Call, numWorkers)
 	c.allWorkersReady = make(chan superstepDone, 1)
 	c.restartSuperStepCh = make(chan uint32, numWorkers)
+	c.queryProgress = make(chan queryProgress, 1)
 
 	c.query = coordQuery
 
@@ -192,17 +193,48 @@ func (c *Coord) TempSensor(
 	stream coordgRPC.Coord_TempSensorServer,
 ) error {
 
+	//for {
+	//	time.Sleep(time.Second * 3)
+	//
+	//	data := int64(10)
+	//	err := stream.Send(&coordgRPC.SensorResponse{Value: data})
+	//	if err != nil {
+	//		log.Printf("Coord TempSensor error: %v\n", err)
+	//	} else {
+	//		log.Printf("Coord TempSensor sent data: %v\n", data)
+	//	}
+	//}
 	for {
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * 3)
+		//log.Println("Coord TempSensor") // why does this only happen once?
+		select {
+		case progress := <-c.queryProgress:
+			log.Printf("Coord TempSensor read progress: %v\n", progress)
 
-		data := int64(10)
-		err := stream.Send(&coordgRPC.SensorResponse{Value: data})
-		if err != nil {
-			log.Printf("Coord TempSensor error: %v\n", err)
-		} else {
-			log.Printf("Coord TempSensor sent data: %v\n", data)
+			payload := coordgRPC.SensorResponse{Value: int64(progress.superstepNumber)}
+			err := stream.Send(&payload)
+			if err != nil {
+				log.Printf("Coord TempSensor error: %v\n", err)
+			} else {
+				log.Printf("Coord TempSensor sent payload: %v\n", payload)
+			}
+
+			if progress.done {
+				log.Printf("Coord TempSensor finished at: %v\n", progress)
+				return nil
+			}
+			//default:
+			//	data := int64(100)
+			//	err := stream.Send(&coordgRPC.SensorResponse{Value: data})
+			//	if err != nil {
+			//		log.Printf("Coord TempSensor error: %v\n", err)
+			//	} else {
+			//		log.Printf("Coord TempSensor sent data: %v\n", data)
+			//	}
 		}
+
 	}
+
 	return nil
 }
 
@@ -244,6 +276,7 @@ type Coord struct {
 	workerReadyMap        map[uint32]bool
 	workerReadyMapMutex   sync.Mutex
 	mx                    sync.Mutex
+	queryProgress         chan queryProgress
 }
 
 type superstepDone struct {
@@ -251,6 +284,11 @@ type superstepDone struct {
 	isSuccess          bool
 	value              interface{}
 	isRestart          bool
+}
+
+type queryProgress struct {
+	superstepNumber uint64
+	done            bool
 }
 
 func NewCoord() *Coord {
@@ -659,6 +697,13 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 					"Completed computation with result %v\n",
 					result.value,
 				)
+
+				// send ssn to queryProgress channel
+				c.queryProgress <- queryProgress{
+					superstepNumber: c.
+						superStepNumber, done: true,
+				}
+
 				// TODO RPC to instruct all workers that the computation
 				// finished
 				endQuery := EndQuery{}
@@ -689,6 +734,16 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				c.superStepNumber, shouldCheckPoint, result.isRestart,
 			)
 
+			// send ssn to queryProgress channel
+			log.Printf(
+				"Coord before sending qp - ssn: %v\n",
+				c.superStepNumber,
+			)
+			c.queryProgress <- queryProgress{
+				superstepNumber: c.
+					superStepNumber, done: false,
+			}
+			log.Printf("Coord after sending qp - ssn: %v\n", c.superStepNumber)
 			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 			for _, worker := range c.queryWorkersCallbook {
 				var result ProgressSuperStepResult

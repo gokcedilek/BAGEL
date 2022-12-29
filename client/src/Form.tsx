@@ -13,14 +13,13 @@ const Form = () => {
   const [srcId, setSrcId] = useState('');
   const [destId, setDestId] = useState('');
 
-  useEffect(() => {
-    const sensorRequest = new SensorRequest();
-    const stream = client.tempSensor(sensorRequest, {});
-    stream.on('data', (response: SensorResponse) => {
-      console.log('data object: ', response.toObject());
-      console.log('data value: ', response.getValue());
-    });
-  }, []);
+  // useEffect(() => {
+  //   const sensorRequest = new SensorRequest();
+  //   const stream = client.tempSensor(sensorRequest, {});
+  //   stream.on('data', (response: SensorResponse) => {
+  //     console.log('data object: ', response.toObject());
+  //   });
+  // }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -34,6 +33,12 @@ const Form = () => {
     client.startQuery(query, null, (err, response) => {
       if (err) return console.log('err: ', err);
       console.log('response: ', response.toObject());
+    });
+
+    const sensorRequest = new SensorRequest();
+    const stream = client.tempSensor(sensorRequest, {});
+    stream.on('data', (response: SensorResponse) => {
+      console.log('data object: ', response.toObject());
     });
   };
 
