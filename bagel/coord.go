@@ -193,20 +193,24 @@ func (c *Coord) TempSensor(
 	stream coordgRPC.Coord_TempSensorServer,
 ) error {
 
-	//for {
-	//	time.Sleep(time.Second * 3)
-	//
-	//	data := int64(10)
-	//	err := stream.Send(&coordgRPC.SensorResponse{Value: data})
-	//	if err != nil {
-	//		log.Printf("Coord TempSensor error: %v\n", err)
-	//	} else {
-	//		log.Printf("Coord TempSensor sent data: %v\n", data)
-	//	}
-	//}
+	streamDoneCh := make(chan error, 1)
+	go c.streamQueryProgress(req, stream, streamDoneCh)
+
 	for {
-		time.Sleep(time.Second * 3)
-		//log.Println("Coord TempSensor") // why does this only happen once?
+		select {
+		case done := <-streamDoneCh:
+			log.Printf("result received from streamQueryProgress: %v\n", done)
+			return done
+		}
+	}
+}
+
+func (c *Coord) streamQueryProgress(
+	req *coordgRPC.SensorRequest,
+	stream coordgRPC.Coord_TempSensorServer,
+	done chan error,
+) {
+	for {
 		select {
 		case progress := <-c.queryProgress:
 			log.Printf("Coord TempSensor read progress: %v\n", progress)
@@ -215,27 +219,20 @@ func (c *Coord) TempSensor(
 			err := stream.Send(&payload)
 			if err != nil {
 				log.Printf("Coord TempSensor error: %v\n", err)
-			} else {
-				log.Printf("Coord TempSensor sent payload: %v\n", payload)
+				done <- err
+				return
 			}
+			log.Printf("Coord TempSensor sent payload: %v\n", payload)
 
 			if progress.done {
 				log.Printf("Coord TempSensor finished at: %v\n", progress)
-				return nil
+				done <- nil
+				return
 			}
-			//default:
-			//	data := int64(100)
-			//	err := stream.Send(&coordgRPC.SensorResponse{Value: data})
-			//	if err != nil {
-			//		log.Printf("Coord TempSensor error: %v\n", err)
-			//	} else {
-			//		log.Printf("Coord TempSensor sent data: %v\n", data)
-			//	}
+			break
+		default:
 		}
-
 	}
-
-	return nil
 }
 
 /* end of proto config */
