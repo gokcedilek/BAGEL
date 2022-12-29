@@ -196,12 +196,10 @@ func (c *Coord) TempSensor(
 	streamDoneCh := make(chan error, 1)
 	go c.streamQueryProgress(req, stream, streamDoneCh)
 
-	for {
-		select {
-		case done := <-streamDoneCh:
-			log.Printf("result received from streamQueryProgress: %v\n", done)
-			return done
-		}
+	select {
+	case done := <-streamDoneCh:
+		log.Printf("result received from streamQueryProgress: %v\n", done)
+		return done
 	}
 }
 
