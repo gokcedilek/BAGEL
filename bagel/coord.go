@@ -212,13 +212,18 @@ func (c *Coord) streamQueryProgress(
 		case progress := <-c.queryProgress:
 			log.Printf("Coord TempSensor read progress: %v\n", progress)
 
-			// map[uint64][]Message
-			// map[uint64]*VertexMessages
-			//payload := coordgRPC.SensorResponse{Value: int64(progress.superstepNumber)}
 			messages := make(map[uint64]*coordgRPC.VertexMessages)
-			//for vId, messages := progress.messages {
-			//
-			//}
+			for vId, progressMessages := range progress.messages {
+				grpcMessages := make(
+					[]*coordgRPC.VertexMessage,
+					len(progressMessages),
+				)
+				//for msg := range progressMessages {
+				//
+				//}
+				//test := coordgRPC.VertexMessages{VertexMessages: grpcMessages}
+				messages[vId] = &coordgRPC.VertexMessages{VertexMessages: grpcMessages}
+			}
 			payload := coordgRPC.QueryProgressResponse{
 				SuperstepNumber: progress.superstepNumber,
 				//Messages:        progress.messages,
