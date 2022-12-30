@@ -23,7 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoordClient interface {
 	StartQuery(ctx context.Context, in *Query, opts ...grpc.CallOption) (*QueryResult, error)
-	TempSensor(ctx context.Context, in *SensorRequest, opts ...grpc.CallOption) (Coord_TempSensorClient, error)
+	QueryProgress(ctx context.Context, in *QueryProgressRequest, opts ...grpc.CallOption) (Coord_QueryProgressClient, error)
 }
 
 type coordClient struct {
@@ -43,12 +43,12 @@ func (c *coordClient) StartQuery(ctx context.Context, in *Query, opts ...grpc.Ca
 	return out, nil
 }
 
-func (c *coordClient) TempSensor(ctx context.Context, in *SensorRequest, opts ...grpc.CallOption) (Coord_TempSensorClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Coord_ServiceDesc.Streams[0], "/coord.Coord/TempSensor", opts...)
+func (c *coordClient) QueryProgress(ctx context.Context, in *QueryProgressRequest, opts ...grpc.CallOption) (Coord_QueryProgressClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Coord_ServiceDesc.Streams[0], "/coord.Coord/QueryProgress", opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &coordTempSensorClient{stream}
+	x := &coordQueryProgressClient{stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -58,17 +58,17 @@ func (c *coordClient) TempSensor(ctx context.Context, in *SensorRequest, opts ..
 	return x, nil
 }
 
-type Coord_TempSensorClient interface {
-	Recv() (*SensorResponse, error)
+type Coord_QueryProgressClient interface {
+	Recv() (*QueryProgressResponse, error)
 	grpc.ClientStream
 }
 
-type coordTempSensorClient struct {
+type coordQueryProgressClient struct {
 	grpc.ClientStream
 }
 
-func (x *coordTempSensorClient) Recv() (*SensorResponse, error) {
-	m := new(SensorResponse)
+func (x *coordQueryProgressClient) Recv() (*QueryProgressResponse, error) {
+	m := new(QueryProgressResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (x *coordTempSensorClient) Recv() (*SensorResponse, error) {
 // for forward compatibility
 type CoordServer interface {
 	StartQuery(context.Context, *Query) (*QueryResult, error)
-	TempSensor(*SensorRequest, Coord_TempSensorServer) error
+	QueryProgress(*QueryProgressRequest, Coord_QueryProgressServer) error
 	mustEmbedUnimplementedCoordServer()
 }
 
@@ -91,8 +91,8 @@ type UnimplementedCoordServer struct {
 func (UnimplementedCoordServer) StartQuery(context.Context, *Query) (*QueryResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartQuery not implemented")
 }
-func (UnimplementedCoordServer) TempSensor(*SensorRequest, Coord_TempSensorServer) error {
-	return status.Errorf(codes.Unimplemented, "method TempSensor not implemented")
+func (UnimplementedCoordServer) QueryProgress(*QueryProgressRequest, Coord_QueryProgressServer) error {
+	return status.Errorf(codes.Unimplemented, "method QueryProgress not implemented")
 }
 func (UnimplementedCoordServer) mustEmbedUnimplementedCoordServer() {}
 
@@ -125,24 +125,24 @@ func _Coord_StartQuery_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Coord_TempSensor_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(SensorRequest)
+func _Coord_QueryProgress_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(QueryProgressRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(CoordServer).TempSensor(m, &coordTempSensorServer{stream})
+	return srv.(CoordServer).QueryProgress(m, &coordQueryProgressServer{stream})
 }
 
-type Coord_TempSensorServer interface {
-	Send(*SensorResponse) error
+type Coord_QueryProgressServer interface {
+	Send(*QueryProgressResponse) error
 	grpc.ServerStream
 }
 
-type coordTempSensorServer struct {
+type coordQueryProgressServer struct {
 	grpc.ServerStream
 }
 
-func (x *coordTempSensorServer) Send(m *SensorResponse) error {
+func (x *coordQueryProgressServer) Send(m *QueryProgressResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -160,8 +160,8 @@ var Coord_ServiceDesc = grpc.ServiceDesc{
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "TempSensor",
-			Handler:       _Coord_TempSensor_Handler,
+			StreamName:    "QueryProgress",
+			Handler:       _Coord_QueryProgress_Handler,
 			ServerStreams: true,
 		},
 	},

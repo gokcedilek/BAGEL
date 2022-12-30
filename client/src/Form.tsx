@@ -3,8 +3,8 @@ import { CoordClient } from './proto/coord_grpc_web_pb';
 import {
   Query,
   QUERY_TYPE,
-  SensorRequest,
-  SensorResponse,
+  QueryProgressRequest,
+  QueryProgressResponse,
 } from './proto/coord_pb';
 
 const client = new CoordClient('http://localhost:8080', null, null);
@@ -35,9 +35,9 @@ const Form = () => {
       console.log('response: ', response.toObject());
     });
 
-    const sensorRequest = new SensorRequest();
-    const stream = client.tempSensor(sensorRequest, {});
-    stream.on('data', (response: SensorResponse) => {
+    const queryProgressRequest = new QueryProgressRequest();
+    const stream = client.queryProgress(queryProgressRequest, {});
+    stream.on('data', (response: QueryProgressResponse) => {
       console.log('data object: ', response.toObject());
     });
   };

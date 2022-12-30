@@ -188,11 +188,10 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	return &reply, nil
 }
 
-func (c *Coord) TempSensor(
-	req *coordgRPC.SensorRequest,
-	stream coordgRPC.Coord_TempSensorServer,
+func (c *Coord) QueryProgress(
+	req *coordgRPC.QueryProgressRequest,
+	stream coordgRPC.Coord_QueryProgressServer,
 ) error {
-
 	streamDoneCh := make(chan error, 1)
 	go c.streamQueryProgress(req, stream, streamDoneCh)
 
@@ -204,8 +203,8 @@ func (c *Coord) TempSensor(
 }
 
 func (c *Coord) streamQueryProgress(
-	req *coordgRPC.SensorRequest,
-	stream coordgRPC.Coord_TempSensorServer,
+	req *coordgRPC.QueryProgressRequest,
+	stream coordgRPC.Coord_QueryProgressServer,
 	done chan error,
 ) {
 	for {
@@ -213,7 +212,18 @@ func (c *Coord) streamQueryProgress(
 		case progress := <-c.queryProgress:
 			log.Printf("Coord TempSensor read progress: %v\n", progress)
 
-			payload := coordgRPC.SensorResponse{Value: int64(progress.superstepNumber)}
+			// map[uint64][]Message
+			// map[uint64]*VertexMessages
+			//payload := coordgRPC.SensorResponse{Value: int64(progress.superstepNumber)}
+			messages := make(map[uint64]*coordgRPC.VertexMessages)
+			//for vId, messages := progress.messages {
+			//
+			//}
+			payload := coordgRPC.QueryProgressResponse{
+				SuperstepNumber: progress.superstepNumber,
+				//Messages:        progress.messages,
+				Messages: messages,
+			}
 			err := stream.Send(&payload)
 			if err != nil {
 				log.Printf("Coord TempSensor error: %v\n", err)
@@ -288,6 +298,7 @@ type queryProgress struct {
 	done            bool
 	// experimental
 	messages VertexMessages
+	//messages map[uint64]VertexMessagesRPC
 }
 
 func NewCoord() *Coord {
@@ -721,7 +732,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				c.queryProgress <- queryProgress{
 					superstepNumber: c.
 						superStepNumber, done: true,
-					messages:                  result.messages,
+					messages: result.messages,
 				}
 
 				// TODO RPC to instruct all workers that the computation
@@ -762,7 +773,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			c.queryProgress <- queryProgress{
 				superstepNumber: c.
 					superStepNumber, done: false,
-				messages:                  result.messages,
+				messages: result.messages,
 			}
 			log.Printf("Coord after sending qp - ssn: %v\n", c.superStepNumber)
 			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)

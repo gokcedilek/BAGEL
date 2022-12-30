@@ -36,6 +36,10 @@ type ProgressSuperStep struct {
 
 type VertexMessages map[uint64][]Message
 
+type VertexMessagesRPC struct {
+	vertexMessages []Message
+}
+
 type ProgressSuperStepResult struct {
 	SuperStepNum uint64
 	IsCheckpoint bool

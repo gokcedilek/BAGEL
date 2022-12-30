@@ -2,6 +2,8 @@ syntax = "proto3";
 package coord;
 option go_package="./coord/";
 
+//import "google/protobuf/any.proto";
+
 enum QUERY_TYPE {
   PAGE_RANK   = 0;
   SHORTEST_PATH  = 1;
@@ -21,14 +23,27 @@ message QueryResult {
   string Error = 3;
 }
 
-message SensorRequest {
+message VertexMessage {
+  uint64 SourceVertexId = 1;
+  uint64 DestVertexId = 2;
+  int64 Value = 3;
 }
 
-message SensorResponse {
-  int64 value = 1;
+message VertexMessages {
+  repeated VertexMessage vertexMessages = 1;
+}
+
+message QueryProgressRequest {
+}
+
+message QueryProgressResponse {
+  uint64 superstepNumber = 1;
+  map<uint64, VertexMessages> messages
+      = 2;
 }
 
 service Coord {
   rpc StartQuery(Query) returns (QueryResult) {};
-  rpc TempSensor(SensorRequest) returns (stream SensorResponse) {};
+  rpc QueryProgress(QueryProgressRequest) returns
+      (stream QueryProgressResponse) {};
 }

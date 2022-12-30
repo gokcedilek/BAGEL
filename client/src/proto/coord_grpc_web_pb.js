@@ -134,56 +134,56 @@ proto.coord.CoordPromiseClient.prototype.startQuery =
 /**
  * @const
  * @type {!grpc.web.MethodDescriptor<
- *   !proto.coord.SensorRequest,
- *   !proto.coord.SensorResponse>}
+ *   !proto.coord.QueryProgressRequest,
+ *   !proto.coord.QueryProgressResponse>}
  */
-const methodDescriptor_Coord_TempSensor = new grpc.web.MethodDescriptor(
-  '/coord.Coord/TempSensor',
+const methodDescriptor_Coord_QueryProgress = new grpc.web.MethodDescriptor(
+  '/coord.Coord/QueryProgress',
   grpc.web.MethodType.SERVER_STREAMING,
-  proto.coord.SensorRequest,
-  proto.coord.SensorResponse,
+  proto.coord.QueryProgressRequest,
+  proto.coord.QueryProgressResponse,
   /**
-   * @param {!proto.coord.SensorRequest} request
+   * @param {!proto.coord.QueryProgressRequest} request
    * @return {!Uint8Array}
    */
   function(request) {
     return request.serializeBinary();
   },
-  proto.coord.SensorResponse.deserializeBinary
+  proto.coord.QueryProgressResponse.deserializeBinary
 );
 
 
 /**
- * @param {!proto.coord.SensorRequest} request The request proto
+ * @param {!proto.coord.QueryProgressRequest} request The request proto
  * @param {?Object<string, string>=} metadata User defined
  *     call metadata
- * @return {!grpc.web.ClientReadableStream<!proto.coord.SensorResponse>}
+ * @return {!grpc.web.ClientReadableStream<!proto.coord.QueryProgressResponse>}
  *     The XHR Node Readable Stream
  */
-proto.coord.CoordClient.prototype.tempSensor =
+proto.coord.CoordClient.prototype.queryProgress =
     function(request, metadata) {
   return this.client_.serverStreaming(this.hostname_ +
-      '/coord.Coord/TempSensor',
+      '/coord.Coord/QueryProgress',
       request,
       metadata || {},
-      methodDescriptor_Coord_TempSensor);
+      methodDescriptor_Coord_QueryProgress);
 };
 
 
 /**
- * @param {!proto.coord.SensorRequest} request The request proto
+ * @param {!proto.coord.QueryProgressRequest} request The request proto
  * @param {?Object<string, string>=} metadata User defined
  *     call metadata
- * @return {!grpc.web.ClientReadableStream<!proto.coord.SensorResponse>}
+ * @return {!grpc.web.ClientReadableStream<!proto.coord.QueryProgressResponse>}
  *     The XHR Node Readable Stream
  */
-proto.coord.CoordPromiseClient.prototype.tempSensor =
+proto.coord.CoordPromiseClient.prototype.queryProgress =
     function(request, metadata) {
   return this.client_.serverStreaming(this.hostname_ +
-      '/coord.Coord/TempSensor',
+      '/coord.Coord/QueryProgress',
       request,
       metadata || {},
-      methodDescriptor_Coord_TempSensor);
+      methodDescriptor_Coord_QueryProgress);
 };
 
 
