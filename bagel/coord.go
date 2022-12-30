@@ -53,22 +53,11 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 		}
 	}
 
-	// go doesn't have a deep copy method :(
-	//c.queryWorkers = make(map[uint32]*rpc.Client)
-	//for k, v := range c.workers {
-	//	c.queryWorkers[k] = v
-	//}
-
-	//c.queryWorkersFailover = make(map[uint32]FailoverQueryWorker)
-	//for k, v := range c.workers {
-	//	// todo
-	//}
 	// todo replace with workerCount from client
 	testWorkerCount := 2
 	c.assignQueryWorkers(testWorkerCount)
 
 	// initialize workerReady map
-	// todo: populate failover query workers with main/replica
 	c.workerReadyMap = make(map[uint32]bool)
 	//for k, _ := range c.queryWorkers {
 	//	c.workerReadyMap[k] = true
@@ -270,7 +259,7 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 
 	logicalId := uint32(0)
 	idx := 0
-	for _, workerNode := range c.workers {
+	for i, workerNode := range c.workers {
 		if idx%2 == 0 {
 			c.queryWorkers[logicalId] = WorkerNode{
 				WorkerConfigId:   workerNode.WorkerConfigId,
@@ -279,7 +268,6 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				WorkerFCheckAddr: workerNode.WorkerFCheckAddr,
 				WorkerListenAddr: workerNode.WorkerListenAddr,
 				IsReplica:        false,
-				//Client:           workerNode.Client,
 			}
 			fmt.Printf(
 				"Worker %v assigned logical id %v as isReplica %v\n",
@@ -293,6 +281,7 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				)
 			}
 
+			c.workers[i] = c.queryWorkers[logicalId]
 			c.queryWorkersCallbook[logicalId] = client
 			//c.queryWorkersDirectory[logicalId] = workerNode.WorkerListenAddr
 		} else {
@@ -303,7 +292,6 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				WorkerFCheckAddr: workerNode.WorkerFCheckAddr,
 				WorkerListenAddr: workerNode.WorkerListenAddr,
 				IsReplica:        true,
-				//Client:           workerNode.Client,
 			}
 			fmt.Printf(
 				"Worker %v assigned logical id %v as isReplica %v\n",
@@ -327,24 +315,27 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 func (c *Coord) handleFailover(logicalId uint32) {
 	mainWorker := c.queryReplicas[logicalId]
 	c.queryWorkers[logicalId] = mainWorker
-	//c.queryWorkersDirectory[logicalId] = mainWorker.WorkerListenAddr
+	log.Printf("query w: %v, query r: %v\n", c.queryWorkers, c.queryReplicas)
+	log.Printf("logical id: %v, main worker: %v\n", logicalId, mainWorker)
+	mainWorkerClient, err := util.DialRPC(mainWorker.WorkerListenAddr)
+	util.CheckErr(err, "handleFailover - failed to dial new main worker node\n")
+	c.queryWorkersCallbook[logicalId] = mainWorkerClient
 	delete(c.queryReplicas, logicalId)
 
-	var newReplica WorkerNode
-	for _, w := range c.workers {
-		if !c.IsActiveWorker(w) {
-			newReplica = w
-			break
-		}
-	}
+	log.Printf("handle failover query replicas: %v\n", c.queryReplicas)
 
+	newReplica := c.GetIdleWorker()
 	if newReplica != (WorkerNode{}) {
+		newReplica.WorkerLogicalId = logicalId
 		c.queryReplicas[logicalId] = newReplica
 		// todo
 	} else {
 		// logging
 		log.Printf("Unable to assign replicas - not enough workers\n")
 	}
+
+	log.Printf("Coord - updated workers: %v\n", c.queryWorkers)
+	log.Printf("Coord - updated replicas: %v\n", c.queryReplicas)
 
 	// broadcast main worker to other workers
 	c.workerDoneFailover = make(chan *rpc.Call, len(c.queryWorkers))
@@ -687,6 +678,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			)
 
 			c.superStepNumber += 1
+			time.Sleep(time.Second * 2)
 		}
 	}
 }
@@ -799,21 +791,44 @@ func (c *Coord) monitor(w WorkerNode) {
 				"monitor: worker %v failed: %s\n", w.WorkerConfigId,
 				notify,
 			)
+			log.Printf("monitor: query workers: %v\n", c.queryWorkers)
 			if len(c.queryWorkers) > 0 {
 				worker := c.workers[w.WorkerConfigId]
+				delete(c.workers, w.WorkerConfigId)
+				log.Printf("worker logical id: %v\n", worker.WorkerLogicalId)
 
 				if _, ok := c.queryWorkers[worker.
 					WorkerLogicalId]; ok {
-					c.handleFailover(w.WorkerConfigId)
-					c.blockWorkersReady(
-						len(c.queryWorkers),
-						c.workerDoneFailover,
-					)
+					log.Printf("monitor: if case\n")
+					c.handleFailover(worker.WorkerLogicalId)
 				} else if _, ok := c.queryReplicas[worker.
 					WorkerLogicalId]; ok {
-					// try to find new replica...
+					log.Printf(
+						"monitor: replica failed; searching for" +
+							" replacements\n",
+					)
+					newReplica := c.GetIdleWorker()
+
+					if newReplica == (WorkerNode{}) {
+						log.Printf(
+							"monitor: no idle workers found - no" +
+								" actions have been taken\n",
+						)
+					} else {
+						replicaWorker := PromotedWorker{
+							LogicalId: worker.WorkerLogicalId,
+							Worker:    newReplica,
+						}
+						var result PromotedWorker
+						c.queryWorkersCallbook[worker.WorkerLogicalId].Call(
+							"Worker.UpdateReplica", replicaWorker, &result,
+						)
+					}
 				} else {
-					// return
+					log.Printf(
+						"monitor: idle worker failed (" +
+							"no one cares) :) \n",
+					)
 				}
 
 				c.restartSuperStepCh <- worker.WorkerLogicalId
@@ -875,6 +890,17 @@ func (c *Coord) GetWorkerDirectory() WorkerDirectory {
 	}
 
 	return directory
+}
+
+func (c *Coord) GetIdleWorker() WorkerNode {
+	var newReplica WorkerNode
+	for _, w := range c.workers {
+		if !c.IsActiveWorker(w) {
+			newReplica = w
+			break
+		}
+	}
+	return newReplica
 }
 
 // Only returns when network or other unrecoverable errors occur

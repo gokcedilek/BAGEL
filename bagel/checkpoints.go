@@ -105,7 +105,16 @@ func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
 	return nil
 }
 
-func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
+func (w *Worker) storeCheckpoint(
+	checkpoint Checkpoint,
+	isSyncReplica bool,
+) (Checkpoint, error) {
+
+	// Call from replica; do not store checkpoint again.
+	if !isSyncReplica {
+		return Checkpoint{}, nil
+	}
+
 	db, err := w.getConnection()
 	if err != nil {
 		os.Exit(1)
@@ -146,9 +155,15 @@ func (w *Worker) storeCheckpoint(checkpoint Checkpoint) (Checkpoint, error) {
 		)
 	}
 
-	// todo send data to replica..
-	if w.Replica != (WorkerNode{}) {
-		w.storeCheckpointReplica(checkpoint)
+	if w.Replica != (WorkerNode{}) && isSyncReplica {
+		err = w.storeCheckpointReplica(checkpoint)
+		if err != nil {
+			util.CheckErr(
+				err,
+				"storeCheckpoint: worker %v could not sync checkpoint with"+
+					" replica\n", w.config.WorkerAddr,
+			)
+		}
 	}
 
 	// notify coord about the latest checkpoint saved

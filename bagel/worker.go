@@ -12,7 +12,6 @@ import (
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
-	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
@@ -115,7 +114,6 @@ func (w *Worker) retrieveVertices(
 ) {
 	w.Vertices = make(map[uint64]*Vertex)
 	svc := database.GetDynamoClient()
-	// TODO: talk about logical IDs for workers
 	vertices, err := database.GetPartitionForWorkerX(
 		svc,
 		tableName,
@@ -218,23 +216,38 @@ func (w *Worker) StartQuery(
 	return nil
 }
 
-//func (w *Worker) HandleFailover(
-//	req PromotedWorker, reply *PromotedWorker,
-//) error {
-//	// todo implementation
-//	w.workerCallBook[req.LogicalId] = req.Worker
-//
-//	*reply = req
-//	return nil
-//}
+/*
+	HandleFailover - RPC call from Coord for non-failed main workers
+*/
+func (w *Worker) HandleFailover(
+	req PromotedWorker, reply *PromotedWorker,
+) error {
+	var err error
+	w.workerCallBook[req.LogicalId], err = util.DialRPC(
+		req.Worker.
+			WorkerListenAddr,
+	)
+	w.workerDirectory[req.LogicalId] = req.Worker.WorkerListenAddr
+	*reply = req
+	return err
+}
 
-//func (w *Worker) UpdateReplica(
-//	req PromotedWorker, reply *PromotedWorker,
-//) error {
-//	w.Replica = req.Worker
-//	*reply = req
-//	return nil
-//}
+/*
+	UpdateReplica - RPC call from Coord to replica that is being promoted;
+		(optional) - promoted replica  assigns its own replica.
+*/
+func (w *Worker) UpdateReplica(
+	req PromotedWorker, reply *PromotedWorker,
+) error {
+	// todo test
+	w.Replica = WorkerNode{}
+
+	if req.Worker != (WorkerNode{}) {
+		w.Replica = req.Worker
+	}
+	*reply = req
+	return nil
+}
 
 func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
@@ -375,8 +388,6 @@ func (w *Worker) Start() error {
 		w.config.WorkerId, math.MaxInt32, w.config.WorkerAddr,
 		w.config.FCheckAckLocalAddress, w.config.WorkerListenAddr, false,
 	}
-	// todo discuss with Ryan -- we cant pass nil through rpc,
-	// should we just rely on workerdirectory to hold rpc clients?
 
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
@@ -414,13 +425,14 @@ func (w *Worker) ComputeVertices(
 ) error {
 	log.Printf("ComputeVertices: worker: %v, args: %v\n", w, args)
 
-	start := time.Now()
+	//start := time.Now()
 
 	// save the checkpoint before running superstep S
 	if args.IsCheckpoint && !args.IsRestart {
 		w.workerMutex.Lock()
 		checkpoint := w.checkpoint(args.SuperStepNum)
-		_, err := w.storeCheckpoint(checkpoint)
+		_, err := w.storeCheckpoint(checkpoint, true)
+		//w.Replica.store
 		util.CheckErr(
 			err,
 			"ComputeVertices: worker %v failed to checkpoint # %v\n",
@@ -469,9 +481,9 @@ func (w *Worker) ComputeVertices(
 			)
 			resp.CurrentValue = vertex.CurrentValue
 
-			w.logger.Printf(
-				"Completed computation with result %v\n", resp.CurrentValue,
-			)
+			//w.logger.Printf(
+			//	"Completed computation with result %v\n", resp.CurrentValue,
+			//)
 		}
 	}
 
@@ -526,19 +538,20 @@ func (w *Worker) ComputeVertices(
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
 
-	duration := time.Since(start)
-	w.logger.Printf(
-		"Compute superstep %v took %v s\n", resp.SuperStepNum,
-		duration.Seconds(),
-	)
+	//duration := time.Since(start)
+	//w.logger.Printf(
+	//	"Compute superstep %v took %v s\n", resp.SuperStepNum,
+	//	duration.Seconds(),
+	//)
 
 	return nil
 }
 
-//func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
-//	_, err := w.storeCheckpoint(checkpoint)
-//	util.CheckErr(err, "Failed to store checkpoint for replica")
-//}
+func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
+	_, err := w.storeCheckpoint(checkpoint, false)
+	util.CheckErr(err, "Failed to store checkpoint for replica")
+	return err
+}
 
 func (w *Worker) PutBatchedMessages(
 	batch BatchedMessages, resp *Message,
