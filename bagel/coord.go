@@ -217,11 +217,15 @@ func (c *Coord) streamQueryProgress(
 				var grpcMessages []*coordgRPC.VertexMessage
 				// populate grpcMessages
 				for _, msg := range progressMessages {
+					val, ok := msg.Value.(int)
+					if !ok {
+						val = -1
+					}
 					grpcMessages = append(
 						grpcMessages, &coordgRPC.VertexMessage{
 							SourceVertexId: msg.SourceVertexId,
 							DestVertexId:   msg.DestVertexId,
-							Value:          10,
+							Value:          int64(val),
 						},
 					)
 				}
@@ -557,20 +561,20 @@ func (c *Coord) blockWorkersReady(
 					}
 
 					// add worker's vertex messages to the messages collection
-					log.Printf(
-						"!!!!!!!!Coord received for ssn: %v, messages: %v\n",
-						ssComplete.SuperStepNum,
-						ssComplete.Messages,
-					)
+					//log.Printf(
+					//	"!!!!!!!!Coord received for ssn: %v, messages: %v\n",
+					//	ssComplete.SuperStepNum,
+					//	ssComplete.Messages,
+					//)
 					for vId, messages := range ssComplete.Messages {
 						superstepMessages[vId] = messages
 					}
-					log.Printf(
-						"!!!!!!!!Coord received for ssn: %v, "+
-							"all superstep messages: %v\n",
-						ssComplete.SuperStepNum,
-						superstepMessages,
-					)
+					//log.Printf(
+					//	"!!!!!!!!Coord received for ssn: %v, "+
+					//		"all superstep messages: %v\n",
+					//	ssComplete.SuperStepNum,
+					//	superstepMessages,
+					//)
 				}
 
 				readyWorkerCounter++
@@ -739,7 +743,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				c.queryProgress <- queryProgress{
 					superstepNumber: c.
 						superStepNumber, done: true,
-					messages: result.messages,
+					messages:                  result.messages,
 				}
 
 				// TODO RPC to instruct all workers that the computation
@@ -772,17 +776,6 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				c.superStepNumber, shouldCheckPoint, result.isRestart,
 			)
 
-			// send ssn to queryProgress channel
-			log.Printf(
-				"Coord before sending qp - ssn: %v\n",
-				c.superStepNumber,
-			)
-			c.queryProgress <- queryProgress{
-				superstepNumber: c.
-					superStepNumber, done: false,
-				messages: result.messages,
-			}
-			log.Printf("Coord after sending qp - ssn: %v\n", c.superStepNumber)
 			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 			for _, worker := range c.queryWorkersCallbook {
 				var result ProgressSuperStepResult
@@ -792,6 +785,13 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				)
 			}
 			go c.blockWorkersReady(numWorkers, c.workerDoneCompute)
+
+			// send ssn to queryProgress channel
+			c.queryProgress <- queryProgress{
+				superstepNumber: c.
+					superStepNumber, done: false,
+				messages:                  result.messages,
+			}
 
 			duration := time.Since(start)
 			logger.Printf(
