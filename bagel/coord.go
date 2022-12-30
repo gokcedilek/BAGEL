@@ -214,20 +214,22 @@ func (c *Coord) streamQueryProgress(
 
 			messages := make(map[uint64]*coordgRPC.VertexMessages)
 			for vId, progressMessages := range progress.messages {
-				grpcMessages := make(
-					[]*coordgRPC.VertexMessage,
-					len(progressMessages),
-				)
-				//for msg := range progressMessages {
-				//
-				//}
-				//test := coordgRPC.VertexMessages{VertexMessages: grpcMessages}
+				var grpcMessages []*coordgRPC.VertexMessage
+				// populate grpcMessages
+				for _, msg := range progressMessages {
+					grpcMessages = append(
+						grpcMessages, &coordgRPC.VertexMessage{
+							SourceVertexId: msg.SourceVertexId,
+							DestVertexId:   msg.DestVertexId,
+							Value:          10,
+						},
+					)
+				}
 				messages[vId] = &coordgRPC.VertexMessages{VertexMessages: grpcMessages}
 			}
 			payload := coordgRPC.QueryProgressResponse{
 				SuperstepNumber: progress.superstepNumber,
-				//Messages:        progress.messages,
-				Messages: messages,
+				Messages:        messages,
 			}
 			err := stream.Send(&payload)
 			if err != nil {
