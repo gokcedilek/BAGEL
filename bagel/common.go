@@ -34,11 +34,15 @@ type ProgressSuperStep struct {
 	IsRestart    bool
 }
 
+type VertexMessages map[uint64][]Message
+
 type ProgressSuperStepResult struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
 	IsActive     bool
 	CurrentValue interface{}
+	// experimental
+	Messages VertexMessages
 }
 
 type RestartSuperStep struct {

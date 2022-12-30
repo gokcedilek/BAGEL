@@ -443,6 +443,7 @@ func (w *Worker) ComputeVertices(
 		)
 	}
 
+	vertexMessages := make(VertexMessages)
 	hasActiveVertex := false
 	for _, vertex := range w.Vertices {
 		vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
@@ -452,6 +453,9 @@ func (w *Worker) ComputeVertices(
 			if vertex.IsActive {
 				hasActiveVertex = true
 			}
+
+			// add to vertex messages map
+			vertexMessages[vertex.Id] = messages
 		}
 
 		vertexType := PAGE_RANK
@@ -474,6 +478,10 @@ func (w *Worker) ComputeVertices(
 			)
 		}
 	}
+
+	log.Printf(
+		"!!!!!Worker %v: vertex messages: %v\n", w.LogicalId, vertexMessages,
+	)
 
 	for worker, msgs := range w.SuperStep.Outgoing {
 		if worker == w.LogicalId {
@@ -525,6 +533,7 @@ func (w *Worker) ComputeVertices(
 	resp.SuperStepNum = args.SuperStepNum
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
+	resp.Messages = vertexMessages
 
 	duration := time.Since(start)
 	w.logger.Printf(

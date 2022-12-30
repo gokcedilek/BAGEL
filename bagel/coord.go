@@ -279,11 +279,15 @@ type superstepDone struct {
 	isSuccess          bool
 	value              interface{}
 	isRestart          bool
+	// experimental
+	messages VertexMessages
 }
 
 type queryProgress struct {
 	superstepNumber uint64
 	done            bool
+	// experimental
+	messages VertexMessages
 }
 
 func NewCoord() *Coord {
@@ -514,6 +518,7 @@ func (c *Coord) blockWorkersReady(
 	readyWorkerCounter := 0
 	inactiveWorkerCounter := 0
 	var computeResult interface{} // result from a single superstep
+	superstepMessages := make(VertexMessages)
 
 	for {
 		select {
@@ -532,6 +537,22 @@ func (c *Coord) blockWorkersReady(
 					if ssComplete.CurrentValue != nil {
 						computeResult = ssComplete.CurrentValue
 					}
+
+					// add worker's vertex messages to the messages collection
+					log.Printf(
+						"!!!!!!!!Coord received for ssn: %v, messages: %v\n",
+						ssComplete.SuperStepNum,
+						ssComplete.Messages,
+					)
+					for vId, messages := range ssComplete.Messages {
+						superstepMessages[vId] = messages
+					}
+					log.Printf(
+						"!!!!!!!!Coord received for ssn: %v, "+
+							"all superstep messages: %v\n",
+						ssComplete.SuperStepNum,
+						superstepMessages,
+					)
 				}
 
 				readyWorkerCounter++
@@ -558,6 +579,7 @@ func (c *Coord) blockWorkersReady(
 						isSuccess:          true,
 						value:              computeResult,
 						isRestart:          isRestart,
+						messages:           superstepMessages,
 					}
 					log.Printf(
 						"blockWorkersReady - all workers are"+
@@ -683,6 +705,8 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			c.workerReadyMap[wId] = false
 			c.workerReadyMapMutex.Unlock()
 		case result := <-c.allWorkersReady:
+			// here the messages of for a given superstep for all vertices
+			// is collected
 			if result.allWorkersInactive {
 				log.Printf(
 					"Compute: complete with result %v!\n",
@@ -697,6 +721,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				c.queryProgress <- queryProgress{
 					superstepNumber: c.
 						superStepNumber, done: true,
+					messages:                  result.messages,
 				}
 
 				// TODO RPC to instruct all workers that the computation
@@ -737,6 +762,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			c.queryProgress <- queryProgress{
 				superstepNumber: c.
 					superStepNumber, done: false,
+				messages:                  result.messages,
 			}
 			log.Printf("Coord after sending qp - ssn: %v\n", c.superStepNumber)
 			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
