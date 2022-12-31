@@ -46,4 +46,5 @@ service Coord {
   rpc StartQuery(Query) returns (QueryResult) {};
   rpc QueryProgress(QueryProgressRequest) returns
       (stream QueryProgressResponse) {};
+  rpc FetchGraph()
 }

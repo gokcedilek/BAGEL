@@ -171,7 +171,7 @@ func (w *Worker) retrieveVertices(
 }
 
 func (w *Worker) StartQuery(
-	startSuperStep StartSuperStep, reply *interface{},
+	startSuperStep StartSuperStep, reply *StartSuperStepResult,
 ) error {
 
 	log.Printf("StartQuery: startSuperStep: %v\n", startSuperStep)
@@ -213,6 +213,19 @@ func (w *Worker) StartQuery(
 			"Worker%v ",
 			w.config.WorkerId,
 		), log.LstdFlags,
+	)
+
+	// set worker vertices in reply
+	// reply.WorkerLogicalId = w.LogicalId
+	reply.WorkerLogicalId = w.config.WorkerId
+	vertexIds := make([]uint64, 0, len(w.Vertices))
+	for k, _ := range w.Vertices {
+		vertexIds = append(vertexIds, k)
+	}
+	reply.Vertices = vertexIds
+	log.Printf(
+		"!!!!Worker %v sending vertices: %v\n", reply.WorkerLogicalId,
+		reply.Vertices,
 	)
 
 	return nil

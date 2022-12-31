@@ -28,6 +28,11 @@ type StartSuperStep struct {
 	Query           Query
 }
 
+type StartSuperStepResult struct {
+	WorkerLogicalId uint32
+	Vertices        []uint64
+}
+
 type ProgressSuperStep struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
@@ -35,6 +40,8 @@ type ProgressSuperStep struct {
 }
 
 type VertexMessages map[uint64][]Message
+
+type WorkerVertices map[uint32][]uint64
 
 type VertexMessagesRPC struct {
 	vertexMessages []Message

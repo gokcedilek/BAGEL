@@ -121,6 +121,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	c.allWorkersReady = make(chan superstepDone, 1)
 	c.restartSuperStepCh = make(chan uint32, numWorkers)
 	c.queryProgress = make(chan queryProgress, 1)
+	c.fetchGraphDone = make(chan WorkerVertices, 1)
 
 	c.query = coordQuery
 
@@ -128,14 +129,18 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 		"StartQuery: computing query %v with %d workers ready!\n", q,
 		numWorkers,
 	)
+	log.Printf(
+		"StartQuery: query workers callbook: %v\n", c.queryWorkersCallbook,
+	)
 
 	// call workers start query handlers
+	var startQueryResult StartSuperStepResult
 	for logicalId, client := range c.queryWorkersCallbook {
-		var result interface{}
+		//var result StartSuperStepResult
 		startSuperStep.WorkerLogicalId = logicalId
 		startSuperStep.ReplicaAddr = c.queryReplicas[logicalId].WorkerListenAddr
 		client.Go(
-			"Worker.StartQuery", startSuperStep, &result,
+			"Worker.StartQuery", startSuperStep, &startQueryResult,
 			c.workerDoneStart,
 		)
 	}
@@ -187,6 +192,10 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	// return nil for no errors
 	return &reply, nil
 }
+
+//func (c *Coord) FetchGraph() error {
+//
+//}
 
 func (c *Coord) QueryProgress(
 	req *coordgRPC.QueryProgressRequest,
@@ -293,6 +302,7 @@ type Coord struct {
 	workerReadyMapMutex   sync.Mutex
 	mx                    sync.Mutex
 	queryProgress         chan queryProgress
+	fetchGraphDone        chan WorkerVertices
 }
 
 type superstepDone struct {
@@ -302,6 +312,8 @@ type superstepDone struct {
 	isRestart          bool
 	// experimental
 	messages VertexMessages
+	// experimental
+	workerVertices WorkerVertices
 }
 
 type queryProgress struct {
@@ -309,7 +321,6 @@ type queryProgress struct {
 	done            bool
 	// experimental
 	messages VertexMessages
-	//messages map[uint64]VertexMessagesRPC
 }
 
 func NewCoord() *Coord {
@@ -541,6 +552,7 @@ func (c *Coord) blockWorkersReady(
 	inactiveWorkerCounter := 0
 	var computeResult interface{} // result from a single superstep
 	superstepMessages := make(VertexMessages)
+	workerVertices := make(WorkerVertices)
 
 	for {
 		select {
@@ -561,20 +573,28 @@ func (c *Coord) blockWorkersReady(
 					}
 
 					// add worker's vertex messages to the messages collection
-					//log.Printf(
-					//	"!!!!!!!!Coord received for ssn: %v, messages: %v\n",
-					//	ssComplete.SuperStepNum,
-					//	ssComplete.Messages,
-					//)
 					for vId, messages := range ssComplete.Messages {
 						superstepMessages[vId] = messages
 					}
-					//log.Printf(
-					//	"!!!!!!!!Coord received for ssn: %v, "+
-					//		"all superstep messages: %v\n",
-					//	ssComplete.SuperStepNum,
-					//	superstepMessages,
-					//)
+				}
+
+				if startComplete, ok := call.Reply.(*StartSuperStepResult); ok {
+					log.Printf(
+						"!!!!!!Coord completed startquery for worker"+
+							" %v, vertices: %v\n",
+						startComplete.WorkerLogicalId,
+						startComplete.Vertices,
+					)
+					log.Printf(
+						"!!!!!!Coord BEFORE workervertices: %v\n",
+						workerVertices,
+					)
+					// TODO bug: something is wrong with workercallbook & ids
+					workerVertices[startComplete.WorkerLogicalId] = startComplete.Vertices
+					log.Printf(
+						"!!!!!!Coord AFTER workervertices: %v\n",
+						workerVertices,
+					)
 				}
 
 				readyWorkerCounter++
@@ -596,12 +616,17 @@ func (c *Coord) blockWorkersReady(
 				)
 
 				if readyWorkerCounter == numWorkers {
+					log.Printf(
+						"!!!!!!Coord computed worker vertices: %v\n",
+						workerVertices,
+					)
 					c.allWorkersReady <- superstepDone{
 						allWorkersInactive: isComputeComplete,
 						isSuccess:          true,
 						value:              computeResult,
 						isRestart:          isRestart,
 						messages:           superstepMessages,
+						workerVertices:     workerVertices,
 					}
 					log.Printf(
 						"blockWorkersReady - all workers are"+
@@ -610,6 +635,7 @@ func (c *Coord) blockWorkersReady(
 					)
 					readyWorkerCounter = 0
 					inactiveWorkerCounter = 0
+					//workerVertices =
 					return
 				}
 			}
@@ -727,6 +753,16 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			c.workerReadyMap[wId] = false
 			c.workerReadyMapMutex.Unlock()
 		case result := <-c.allWorkersReady:
+			// if the result is from StartQuery,
+			//send the worker vertices to client (
+			// notify channel that worker vertices are populated)
+			if len(result.workerVertices) > 0 {
+				log.Printf(
+					"!!!!!!!Coord - created worker vertices: %v\n",
+					result.workerVertices,
+				)
+			}
+
 			// here the messages of for a given superstep for all vertices
 			// is collected
 			if result.allWorkersInactive {
