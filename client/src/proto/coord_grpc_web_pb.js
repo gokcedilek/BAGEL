@@ -187,5 +187,66 @@ proto.coord.CoordPromiseClient.prototype.queryProgress =
 };
 
 
+/**
+ * @const
+ * @type {!grpc.web.MethodDescriptor<
+ *   !proto.coord.FetchGraphRequest,
+ *   !proto.coord.FetchGraphResponse>}
+ */
+const methodDescriptor_Coord_FetchGraph = new grpc.web.MethodDescriptor(
+  '/coord.Coord/FetchGraph',
+  grpc.web.MethodType.UNARY,
+  proto.coord.FetchGraphRequest,
+  proto.coord.FetchGraphResponse,
+  /**
+   * @param {!proto.coord.FetchGraphRequest} request
+   * @return {!Uint8Array}
+   */
+  function(request) {
+    return request.serializeBinary();
+  },
+  proto.coord.FetchGraphResponse.deserializeBinary
+);
+
+
+/**
+ * @param {!proto.coord.FetchGraphRequest} request The
+ *     request proto
+ * @param {?Object<string, string>} metadata User defined
+ *     call metadata
+ * @param {function(?grpc.web.RpcError, ?proto.coord.FetchGraphResponse)}
+ *     callback The callback function(error, response)
+ * @return {!grpc.web.ClientReadableStream<!proto.coord.FetchGraphResponse>|undefined}
+ *     The XHR Node Readable Stream
+ */
+proto.coord.CoordClient.prototype.fetchGraph =
+    function(request, metadata, callback) {
+  return this.client_.rpcCall(this.hostname_ +
+      '/coord.Coord/FetchGraph',
+      request,
+      metadata || {},
+      methodDescriptor_Coord_FetchGraph,
+      callback);
+};
+
+
+/**
+ * @param {!proto.coord.FetchGraphRequest} request The
+ *     request proto
+ * @param {?Object<string, string>=} metadata User defined
+ *     call metadata
+ * @return {!Promise<!proto.coord.FetchGraphResponse>}
+ *     Promise that resolves to the response
+ */
+proto.coord.CoordPromiseClient.prototype.fetchGraph =
+    function(request, metadata) {
+  return this.client_.unaryCall(this.hostname_ +
+      '/coord.Coord/FetchGraph',
+      request,
+      metadata || {},
+      methodDescriptor_Coord_FetchGraph);
+};
+
+
 module.exports = proto.coord;
 

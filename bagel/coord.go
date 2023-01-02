@@ -80,9 +80,6 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	fmt.Printf("query workers: %v\n", c.queryWorkers)
 	fmt.Printf("query replicas: %v\n", c.queryReplicas)
 
-	//return nil, nil
-	//return &reply, nil
-
 	// initialize worker directory
 
 	// create new map of checkpoints for a new query which may have different number of workers
@@ -193,9 +190,30 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	return &reply, nil
 }
 
-//func (c *Coord) FetchGraph() error {
-//
-//}
+func (c *Coord) FetchGraph(
+	ctx context.Context, req *coordgRPC.FetchGraphRequest,
+) (
+	*coordgRPC.FetchGraphResponse, error,
+) {
+	var reply coordgRPC.FetchGraphResponse
+	workerVertices := make(map[uint32]*coordgRPC.WorkerVertices)
+fetchGraph:
+	for {
+		select {
+		case workerVerticesDone := <-c.fetchGraphDone:
+			log.Printf("HELLO FETCHGRAPH RECEIVED: %v\n", workerVerticesDone)
+			for wId, vertices := range workerVerticesDone {
+				workerVertices[wId] = &coordgRPC.
+					WorkerVertices{Vertices: vertices}
+			}
+			break fetchGraph
+		default:
+		}
+	}
+
+	reply.WorkerVertices = workerVertices
+	return &reply, nil
+}
 
 func (c *Coord) QueryProgress(
 	req *coordgRPC.QueryProgressRequest,
@@ -553,6 +571,7 @@ func (c *Coord) blockWorkersReady(
 	var computeResult interface{} // result from a single superstep
 	superstepMessages := make(VertexMessages)
 	workerVertices := make(WorkerVertices)
+	var workerVerticesMutex sync.Mutex
 
 	for {
 		select {
@@ -589,12 +608,14 @@ func (c *Coord) blockWorkersReady(
 						"!!!!!!Coord BEFORE workervertices: %v\n",
 						workerVertices,
 					)
+					workerVerticesMutex.Lock()
 					// TODO bug: something is wrong with workercallbook & ids
 					workerVertices[startComplete.WorkerLogicalId] = startComplete.Vertices
 					log.Printf(
 						"!!!!!!Coord AFTER workervertices: %v\n",
 						workerVertices,
 					)
+					workerVerticesMutex.Unlock()
 				}
 
 				readyWorkerCounter++
@@ -616,10 +637,6 @@ func (c *Coord) blockWorkersReady(
 				)
 
 				if readyWorkerCounter == numWorkers {
-					log.Printf(
-						"!!!!!!Coord computed worker vertices: %v\n",
-						workerVertices,
-					)
 					c.allWorkersReady <- superstepDone{
 						allWorkersInactive: isComputeComplete,
 						isSuccess:          true,
@@ -635,7 +652,6 @@ func (c *Coord) blockWorkersReady(
 					)
 					readyWorkerCounter = 0
 					inactiveWorkerCounter = 0
-					//workerVertices =
 					return
 				}
 			}
@@ -761,6 +777,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 					"!!!!!!!Coord - created worker vertices: %v\n",
 					result.workerVertices,
 				)
+				c.fetchGraphDone <- result.workerVertices
 			}
 
 			// here the messages of for a given superstep for all vertices
@@ -779,7 +796,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				c.queryProgress <- queryProgress{
 					superstepNumber: c.
 						superStepNumber, done: true,
-					messages:                  result.messages,
+					messages: result.messages,
 				}
 
 				// TODO RPC to instruct all workers that the computation
@@ -826,7 +843,7 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			c.queryProgress <- queryProgress{
 				superstepNumber: c.
 					superStepNumber, done: false,
-				messages:                  result.messages,
+				messages: result.messages,
 			}
 
 			duration := time.Since(start)

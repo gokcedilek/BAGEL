@@ -2,7 +2,6 @@ syntax = "proto3";
 package coord;
 option go_package="./coord/";
 
-//import "google/protobuf/any.proto";
 
 enum QUERY_TYPE {
   PAGE_RANK   = 0;
@@ -42,9 +41,23 @@ message QueryProgressResponse {
       = 2;
 }
 
+message WorkerVertices {
+  repeated uint64 vertices = 1;
+}
+
+message FetchGraphRequest {
+//  string TableName = 1;
+//  int64 NumVertices = 2;
+}
+
+message FetchGraphResponse {
+  map<uint32, WorkerVertices> workerVertices = 1;
+}
+
 service Coord {
   rpc StartQuery(Query) returns (QueryResult) {};
   rpc QueryProgress(QueryProgressRequest) returns
       (stream QueryProgressResponse) {};
-  rpc FetchGraph()
+  rpc FetchGraph(FetchGraphRequest) returns
+      (FetchGraphResponse) {};
 }
