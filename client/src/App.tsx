@@ -1,12 +1,12 @@
 import React from 'react';
 import logo from './logo.svg';
-import './App.css';
-import Form from './Form';
+// import Query from './Query';
+import Test from './Test';
 
 function App() {
   return (
     <div className='App'>
-      <Form />
+      <Test />
       {/* <header className='App-header'>
         <img src={logo} className='App-logo' alt='logo' />
         <p>

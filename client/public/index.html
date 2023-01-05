@@ -22,11 +22,30 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bigelow+Rules&family=Roboto:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
     <title>React App</title>
+    <style type="text/css">
+      body,
+      svg,
+      #graph-container {
+        height: 100%;
+        width: 100%;
+        position: absolute;
+        overflow: hidden;
+        margin: 0px;
+      }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
+    <div id="root">
+      <div id="graph-container"></div>
+    </div>
     <!--
       This HTML file is a template.
       If you open it directly in the browser, you will see an empty page.
