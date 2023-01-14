@@ -196,22 +196,22 @@ func (c *Coord) FetchGraph(
 	*coordgRPC.FetchGraphResponse, error,
 ) {
 	var reply coordgRPC.FetchGraphResponse
-	workerVertices := make(map[uint32]*coordgRPC.WorkerVertices)
-fetchGraph:
-	for {
-		select {
-		case workerVerticesDone := <-c.fetchGraphDone:
-			log.Printf("HELLO FETCHGRAPH RECEIVED: %v\n", workerVerticesDone)
-			for wId, vertices := range workerVerticesDone {
-				workerVertices[wId] = &coordgRPC.
-					WorkerVertices{Vertices: vertices}
-			}
-			break fetchGraph
-		default:
-		}
-	}
+	//	workerVertices := make(map[uint32]*coordgRPC.WorkerVertices)
+	//fetchGraph:
+	//	for {
+	//		select {
+	//		case workerVerticesDone := <-c.fetchGraphDone:
+	//			log.Printf("HELLO FETCHGRAPH RECEIVED: %v\n", workerVerticesDone)
+	//			for wId, vertices := range workerVerticesDone {
+	//				workerVertices[wId] = &coordgRPC.
+	//					WorkerVertices{Vertices: vertices}
+	//			}
+	//			break fetchGraph
+	//		default:
+	//		}
+	//	}
 
-	reply.WorkerVertices = workerVertices
+	//reply.WorkerVertices = workerVertices
 	return &reply, nil
 }
 
@@ -219,14 +219,15 @@ func (c *Coord) QueryProgress(
 	req *coordgRPC.QueryProgressRequest,
 	stream coordgRPC.Coord_QueryProgressServer,
 ) error {
-	streamDoneCh := make(chan error, 1)
-	go c.streamQueryProgress(req, stream, streamDoneCh)
-
-	select {
-	case done := <-streamDoneCh:
-		log.Printf("result received from streamQueryProgress: %v\n", done)
-		return done
-	}
+	//streamDoneCh := make(chan error, 1)
+	//go c.streamQueryProgress(req, stream, streamDoneCh)
+	//
+	//select {
+	//case done := <-streamDoneCh:
+	//	log.Printf("result received from streamQueryProgress: %v\n", done)
+	//	return done
+	//}
+	return nil
 }
 
 func (c *Coord) streamQueryProgress(
@@ -793,11 +794,11 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 				)
 
 				// send ssn to queryProgress channel
-				c.queryProgress <- queryProgress{
-					superstepNumber: c.
-						superStepNumber, done: true,
-					messages: result.messages,
-				}
+				//c.queryProgress <- queryProgress{
+				//	superstepNumber: c.
+				//		superStepNumber, done: true,
+				//	messages: result.messages,
+				//}
 
 				// TODO RPC to instruct all workers that the computation
 				// finished
@@ -840,11 +841,11 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			go c.blockWorkersReady(numWorkers, c.workerDoneCompute)
 
 			// send ssn to queryProgress channel
-			c.queryProgress <- queryProgress{
-				superstepNumber: c.
-					superStepNumber, done: false,
-				messages: result.messages,
-			}
+			//c.queryProgress <- queryProgress{
+			//	superstepNumber: c.
+			//		superStepNumber, done: false,
+			//	messages: result.messages,
+			//}
 
 			duration := time.Since(start)
 			logger.Printf(

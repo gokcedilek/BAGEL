@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CoordClient } from './proto/coord_grpc_web_pb';
+import { CoordClient } from '../proto/coord_grpc_web_pb';
 import {
   Query,
   QUERY_TYPE,
@@ -8,10 +8,9 @@ import {
   FetchGraphRequest,
   FetchGraphResponse,
   VertexMessage,
-} from './proto/coord_pb';
+} from '../proto/coord_pb';
 // import * as d3 from 'd3';
 import * as Viva from 'vivagraphjs';
-import { useStateWithCallbackLazy } from 'use-state-with-callback';
 
 const client = new CoordClient('http://localhost:8080', null, null);
 
