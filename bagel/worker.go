@@ -45,12 +45,16 @@ type Worker struct {
 	Query           Query
 	Vertices        map[uint64]*Vertex
 	workerDirectory WorkerDirectory
-	workerCallBook  WorkerCallBook
-	NumWorkers      uint32
-	QueryVertex     uint64
-	workerMutex     sync.Mutex
-	logFile         *os.File
-	logger          *log.Logger
+	// workerCallBook  WorkerPool
+	workerCallBook WorkerCallBook
+	Replica        WorkerNode
+	ReplicaClient  *rpc.Client
+	LogicalId      uint32
+	NumWorkers     uint32
+	QueryVertex    uint64
+	workerMutex    sync.Mutex
+	logFile        *os.File
+	logger         *log.Logger
 }
 
 type SuperStep struct {
@@ -106,7 +110,9 @@ func NewSuperStep() *SuperStep {
 	}
 }
 
-func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
+func (w *Worker) retrieveVertices(
+	numWorkers uint8, tableName string,
+) {
 	w.Vertices = make(map[uint64]*Vertex)
 	svc := database.GetDynamoClient()
 	// TODO: talk about logical IDs for workers
@@ -114,7 +120,7 @@ func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
 		svc,
 		tableName,
 		int(numWorkers),
-		int(w.config.WorkerId),
+		int(w.LogicalId),
 	)
 	log.Printf(
 		"retrieveVertices: retrieved %v vertices for worker %v from the"+
@@ -160,21 +166,24 @@ func (w *Worker) retrieveVertices(numWorkers uint8, tableName string) {
 			" from the"+
 			" db!\n",
 		len(w.Vertices),
-		w.config.WorkerId,
+		w.LogicalId,
 	)
 }
 
 func (w *Worker) StartQuery(
-	startSuperStep StartSuperStep, reply *interface{},
+	startSuperStep StartSuperStep, reply *StartSuperStepResult,
 ) error {
 
 	log.Printf("StartQuery: startSuperStep: %v\n", startSuperStep)
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
+	w.LogicalId = startSuperStep.WorkerLogicalId
+	replicaClient, err := util.DialRPC(startSuperStep.ReplicaAddr)
+	w.ReplicaClient = replicaClient
 
 	// setup local checkpoints storage for the worker
-	err := w.initializeCheckpoints()
+	err = w.initializeCheckpoints()
 	util.CheckErr(
 		err, "StartQuery: Worker %v could not setup checkpoints db\n",
 		w.config.WorkerId,
@@ -194,7 +203,7 @@ func (w *Worker) StartQuery(
 	// create a log file
 	w.logFile, err = os.OpenFile(
 		fmt.Sprintf("worker%v.log", w.config.WorkerId),
-		os.O_WRONLY|os.O_CREATE, 0644,
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644,
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -206,15 +215,46 @@ func (w *Worker) StartQuery(
 		), log.LstdFlags,
 	)
 
+	// set worker vertices in reply
+	// reply.WorkerLogicalId = w.LogicalId
+	reply.WorkerLogicalId = w.config.WorkerId
+	vertexIds := make([]uint64, 0, len(w.Vertices))
+	for k, _ := range w.Vertices {
+		vertexIds = append(vertexIds, k)
+	}
+	reply.Vertices = vertexIds
+	log.Printf(
+		"!!!!Worker %v sending vertices: %v\n", reply.WorkerLogicalId,
+		reply.Vertices,
+	)
+
 	return nil
 }
+
+//func (w *Worker) HandleFailover(
+//	req PromotedWorker, reply *PromotedWorker,
+//) error {
+//	// todo implementation
+//	w.workerCallBook[req.LogicalId] = req.Worker
+//
+//	*reply = req
+//	return nil
+//}
+
+//func (w *Worker) UpdateReplica(
+//	req PromotedWorker, reply *PromotedWorker,
+//) error {
+//	w.Replica = req.Worker
+//	*reply = req
+//	return nil
+//}
 
 func (w *Worker) RevertToLastCheckpoint(
 	req RestartSuperStep, reply *RestartSuperStep,
 ) error {
 	w.NumWorkers = uint32(req.NumWorkers)
 	w.UpdateWorkerCallBook(req.WorkerDirectory)
-	w.workerCallBook = make(map[uint32]*rpc.Client)
+	w.workerCallBook = make(WorkerCallBook)
 	w.Query = req.Query
 
 	log.Printf(
@@ -345,9 +385,11 @@ func (w *Worker) Start() error {
 	)
 
 	workerNode := WorkerNode{
-		w.config.WorkerId, w.config.WorkerAddr,
-		w.config.FCheckAckLocalAddress, w.config.WorkerListenAddr,
+		w.config.WorkerId, math.MaxInt32, w.config.WorkerAddr,
+		w.config.FCheckAckLocalAddress, w.config.WorkerListenAddr, false,
 	}
+	// todo discuss with Ryan -- we cant pass nil through rpc,
+	// should we just rely on workerdirectory to hold rpc clients?
 
 	var response WorkerNode
 	err = coordClient.Call("Coord.JoinWorker", workerNode, &response)
@@ -367,6 +409,16 @@ func (w *Worker) Start() error {
 	// go wait for work to do
 	wg.Wait()
 
+	return nil
+}
+
+func (w *Worker) EndQuery(req EndQuery, reply *EndQuery) error {
+	// TODO shut down resources
+	log.Printf("Worker %v in endQuery\n", w.LogicalId)
+	w.logger = nil
+	w.logFile.Close()
+
+	*reply = req
 	return nil
 }
 
@@ -404,6 +456,7 @@ func (w *Worker) ComputeVertices(
 		)
 	}
 
+	vertexMessages := make(VertexMessages)
 	hasActiveVertex := false
 	for _, vertex := range w.Vertices {
 		vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
@@ -412,7 +465,10 @@ func (w *Worker) ComputeVertices(
 			w.mapMessagesToWorkers(messages)
 			if vertex.IsActive {
 				hasActiveVertex = true
-			} 
+			}
+
+			// add to vertex messages map
+			vertexMessages[vertex.Id] = messages
 		}
 
 		vertexType := PAGE_RANK
@@ -436,8 +492,12 @@ func (w *Worker) ComputeVertices(
 		}
 	}
 
+	log.Printf(
+		"!!!!!Worker %v: vertex messages: %v\n", w.LogicalId, vertexMessages,
+	)
+
 	for worker, msgs := range w.SuperStep.Outgoing {
-		if worker == w.config.WorkerId {
+		if worker == w.LogicalId {
 			w.workerMutex.Lock()
 			for _, msg := range msgs {
 				w.NextSuperStep.Messages[msg.DestVertexId] = append(
@@ -452,6 +512,7 @@ func (w *Worker) ComputeVertices(
 
 		if _, exists := w.workerCallBook[worker]; !exists {
 			var err error
+			// todo
 			w.workerCallBook[worker], err = util.DialRPC(w.workerDirectory[worker])
 
 			if err != nil {
@@ -485,6 +546,7 @@ func (w *Worker) ComputeVertices(
 	resp.SuperStepNum = args.SuperStepNum
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
+	resp.Messages = vertexMessages
 
 	duration := time.Since(start)
 	w.logger.Printf(
@@ -494,6 +556,11 @@ func (w *Worker) ComputeVertices(
 
 	return nil
 }
+
+//func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
+//	_, err := w.storeCheckpoint(checkpoint)
+//	util.CheckErr(err, "Failed to store checkpoint for replica")
+//}
 
 func (w *Worker) PutBatchedMessages(
 	batch BatchedMessages, resp *Message,
@@ -525,9 +592,11 @@ func (w *Worker) switchToNextSuperStep() error {
 func (w *Worker) mapMessagesToWorkers(msgs []Message) {
 	w.workerMutex.Lock()
 	for _, msg := range msgs {
+		log.Printf("worker %v message: %v\n", w.config.WorkerId, msg)
 		destWorker := util.GetFlooredModulo(
 			util.HashId(msg.DestVertexId), uint64(w.NumWorkers),
 		)
+		log.Printf("dst worker: %v\n", destWorker)
 		w.SuperStep.Outgoing[uint32(destWorker)] = append(
 			w.SuperStep.Outgoing[uint32(destWorker)], msg,
 		)

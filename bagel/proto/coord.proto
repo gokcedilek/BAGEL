@@ -2,6 +2,7 @@ syntax = "proto3";
 package coord;
 option go_package="./coord/";
 
+
 enum QUERY_TYPE {
   PAGE_RANK   = 0;
   SHORTEST_PATH  = 1;
@@ -21,6 +22,42 @@ message QueryResult {
   string Error = 3;
 }
 
+message VertexMessage {
+  uint64 SourceVertexId = 1;
+  uint64 DestVertexId = 2;
+  int64 Value = 3;
+}
+
+message VertexMessages {
+  repeated VertexMessage vertexMessages = 1;
+}
+
+message QueryProgressRequest {
+}
+
+message QueryProgressResponse {
+  uint64 superstepNumber = 1;
+  map<uint64, VertexMessages> messages
+      = 2;
+}
+
+message WorkerVertices {
+  repeated uint64 vertices = 1;
+}
+
+message FetchGraphRequest {
+//  string TableName = 1;
+//  int64 NumVertices = 2;
+}
+
+message FetchGraphResponse {
+  map<uint32, WorkerVertices> workerVertices = 1;
+}
+
 service Coord {
   rpc StartQuery(Query) returns (QueryResult) {};
+  rpc QueryProgress(QueryProgressRequest) returns
+      (stream QueryProgressResponse) {};
+  rpc FetchGraph(FetchGraphRequest) returns
+      (FetchGraphResponse) {};
 }

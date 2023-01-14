@@ -1,12 +1,12 @@
 import React from 'react';
-import logo from './logo.svg';
-import './App.css';
-import Form from './Form';
+import CreateQuery from './components/CreateQuery';
+import DrawQuery from './components/DrawQuery';
 
 function App() {
   return (
     <div className='App'>
-      <Form />
+      <CreateQuery />
+      <DrawQuery />
       {/* <header className='App-header'>
         <img src={logo} className='App-logo' alt='logo' />
         <p>

@@ -2,6 +2,7 @@ package bagel
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -53,16 +54,33 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	}
 
 	// go doesn't have a deep copy method :(
-	c.queryWorkers = make(map[uint32]*rpc.Client)
-	for k, v := range c.workers {
-		c.queryWorkers[k] = v
-	}
+	//c.queryWorkers = make(map[uint32]*rpc.Client)
+	//for k, v := range c.workers {
+	//	c.queryWorkers[k] = v
+	//}
+
+	//c.queryWorkersFailover = make(map[uint32]FailoverQueryWorker)
+	//for k, v := range c.workers {
+	//	// todo
+	//}
+	// todo replace with workerCount from client
+	testWorkerCount := 2
+	c.assignQueryWorkers(testWorkerCount)
 
 	// initialize workerReady map
+	// todo: populate failover query workers with main/replica
 	c.workerReadyMap = make(map[uint32]bool)
-	for k, _ := range c.queryWorkers {
-		c.workerReadyMap[k] = true
+	//for k, _ := range c.queryWorkers {
+	//	c.workerReadyMap[k] = true
+	//}
+	for logicalId := range c.queryWorkers {
+		c.workerReadyMap[logicalId] = true
 	}
+
+	fmt.Printf("query workers: %v\n", c.queryWorkers)
+	fmt.Printf("query replicas: %v\n", c.queryReplicas)
+
+	// initialize worker directory
 
 	// create new map of checkpoints for a new query which may have different number of workers
 	c.lastCheckpointNumber = 0
@@ -88,7 +106,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	startSuperStep := StartSuperStep{
 		NumWorkers:      uint8(len(c.queryWorkers)),
-		WorkerDirectory: c.queryWorkersDirectory,
+		WorkerDirectory: c.GetWorkerDirectory(),
 		Query:           coordQuery,
 	}
 
@@ -96,8 +114,11 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	c.workerDoneStart = make(chan *rpc.Call, numWorkers)
 	c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
+	c.workerDoneFailover = make(chan *rpc.Call, numWorkers)
 	c.allWorkersReady = make(chan superstepDone, 1)
 	c.restartSuperStepCh = make(chan uint32, numWorkers)
+	c.queryProgress = make(chan queryProgress, 1)
+	c.fetchGraphDone = make(chan WorkerVertices, 1)
 
 	c.query = coordQuery
 
@@ -105,12 +126,18 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 		"StartQuery: computing query %v with %d workers ready!\n", q,
 		numWorkers,
 	)
+	log.Printf(
+		"StartQuery: query workers callbook: %v\n", c.queryWorkersCallbook,
+	)
 
 	// call workers start query handlers
-	for _, wClient := range c.queryWorkers {
-		var result interface{}
-		wClient.Go(
-			"Worker.StartQuery", startSuperStep, &result,
+	var startQueryResult StartSuperStepResult
+	for logicalId, client := range c.queryWorkersCallbook {
+		//var result StartSuperStepResult
+		startSuperStep.WorkerLogicalId = logicalId
+		startSuperStep.ReplicaAddr = c.queryReplicas[logicalId].WorkerListenAddr
+		client.Go(
+			"Worker.StartQuery", startSuperStep, &startQueryResult,
 			c.workerDoneStart,
 		)
 	}
@@ -122,7 +149,7 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	// create a log file
 	logFile, err := os.OpenFile(
-		"coord.log", os.O_WRONLY|os.O_CREATE, 0644,
+		"coord.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644,
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -155,10 +182,104 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	log.Printf("StartQuery: sending back result: %v\n", reply.Result)
 
 	c.queryWorkers = nil
+	c.queryReplicas = nil
+	c.queryWorkersCallbook = nil
 	c.query = Query{}
 
 	// return nil for no errors
 	return &reply, nil
+}
+
+func (c *Coord) FetchGraph(
+	ctx context.Context, req *coordgRPC.FetchGraphRequest,
+) (
+	*coordgRPC.FetchGraphResponse, error,
+) {
+	var reply coordgRPC.FetchGraphResponse
+	//	workerVertices := make(map[uint32]*coordgRPC.WorkerVertices)
+	//fetchGraph:
+	//	for {
+	//		select {
+	//		case workerVerticesDone := <-c.fetchGraphDone:
+	//			log.Printf("HELLO FETCHGRAPH RECEIVED: %v\n", workerVerticesDone)
+	//			for wId, vertices := range workerVerticesDone {
+	//				workerVertices[wId] = &coordgRPC.
+	//					WorkerVertices{Vertices: vertices}
+	//			}
+	//			break fetchGraph
+	//		default:
+	//		}
+	//	}
+
+	//reply.WorkerVertices = workerVertices
+	return &reply, nil
+}
+
+func (c *Coord) QueryProgress(
+	req *coordgRPC.QueryProgressRequest,
+	stream coordgRPC.Coord_QueryProgressServer,
+) error {
+	//streamDoneCh := make(chan error, 1)
+	//go c.streamQueryProgress(req, stream, streamDoneCh)
+	//
+	//select {
+	//case done := <-streamDoneCh:
+	//	log.Printf("result received from streamQueryProgress: %v\n", done)
+	//	return done
+	//}
+	return nil
+}
+
+func (c *Coord) streamQueryProgress(
+	req *coordgRPC.QueryProgressRequest,
+	stream coordgRPC.Coord_QueryProgressServer,
+	done chan error,
+) {
+	for {
+		select {
+		case progress := <-c.queryProgress:
+			log.Printf("Coord TempSensor read progress: %v\n", progress)
+
+			messages := make(map[uint64]*coordgRPC.VertexMessages)
+			for vId, progressMessages := range progress.messages {
+				var grpcMessages []*coordgRPC.VertexMessage
+				// populate grpcMessages
+				for _, msg := range progressMessages {
+					val, ok := msg.Value.(int)
+					if !ok {
+						val = -1
+					}
+					grpcMessages = append(
+						grpcMessages, &coordgRPC.VertexMessage{
+							SourceVertexId: msg.SourceVertexId,
+							DestVertexId:   msg.DestVertexId,
+							Value:          int64(val),
+						},
+					)
+				}
+				messages[vId] = &coordgRPC.VertexMessages{VertexMessages: grpcMessages}
+			}
+			payload := coordgRPC.QueryProgressResponse{
+				SuperstepNumber: progress.superstepNumber,
+				Messages:        messages,
+			}
+			err := stream.Send(&payload)
+			if err != nil {
+				log.Printf("Coord TempSensor error: %v\n", err)
+				done <- err
+				return
+			}
+			log.Printf("Coord TempSensor sent payload: %v\n", payload)
+
+			if progress.done {
+				log.Printf("Coord TempSensor finished at: %v\n", progress)
+				done <- nil
+				return
+			}
+			break
+		default:
+		}
+	}
 }
 
 /* end of proto config */
@@ -173,12 +294,18 @@ type CoordConfig struct {
 type Coord struct {
 	// Coord state may go here
 	coordgRPC.UnimplementedCoordServer
-	clientAPIListenAddr   string
-	workerAPIListenAddr   string
-	lostMsgsThresh        uint8
-	workers               WorkerCallBook // worker id --> worker connection
-	queryWorkers          WorkerCallBook // workers in use for current query - will be updated at start of query
-	queryWorkersDirectory WorkerDirectory
+	clientAPIListenAddr  string
+	workerAPIListenAddr  string
+	lostMsgsThresh       uint8
+	workers              WorkerPool // worker id --> worker connection
+	queryWorkers         WorkerPool // workers in use for current query
+	queryWorkersCallbook WorkerCallBook
+	queryReplicas        WorkerPool // replicas in use for current query
+	// - will be updated at start of query
+	//queryWorkersDirectory WorkerDirectory // should only include main workers
+	//workersDirectory WorkerDirectory
+	//queryWorkersFailover  FailoverWorkerCallBook
+	//workerPoolFailover    WorkerCallBook
 	lastCheckpointNumber  uint64
 	lastWorkerCheckpoints map[uint32]uint64
 	checkpointFrequency   uint64
@@ -186,12 +313,15 @@ type Coord struct {
 	workerDoneStart       chan *rpc.Call // done messages for Worker.StartQuery RPC
 	workerDoneCompute     chan *rpc.Call // done messages for Worker.ComputeVertices RPC
 	workerDoneRestart     chan *rpc.Call // done messages for Worker.RevertToLastCheckpoint RPC
+	workerDoneFailover    chan *rpc.Call
 	allWorkersReady       chan superstepDone
 	restartSuperStepCh    chan uint32
 	query                 Query
 	workerReadyMap        map[uint32]bool
 	workerReadyMapMutex   sync.Mutex
 	mx                    sync.Mutex
+	queryProgress         chan queryProgress
+	fetchGraphDone        chan WorkerVertices
 }
 
 type superstepDone struct {
@@ -199,20 +329,238 @@ type superstepDone struct {
 	isSuccess          bool
 	value              interface{}
 	isRestart          bool
+	// experimental
+	messages VertexMessages
+	// experimental
+	workerVertices WorkerVertices
+}
+
+type queryProgress struct {
+	superstepNumber uint64
+	done            bool
+	// experimental
+	messages VertexMessages
 }
 
 func NewCoord() *Coord {
 
 	return &Coord{
-		clientAPIListenAddr:      "",
-		workerAPIListenAddr:      "",
-		lostMsgsThresh:           0,
-		lastWorkerCheckpoints:    make(map[uint32]uint64),
-		workers:                  make(map[uint32]*rpc.Client),
-		queryWorkers:             make(WorkerCallBook),
-		queryWorkersDirectory:    make(WorkerDirectory),
+		clientAPIListenAddr:   "",
+		workerAPIListenAddr:   "",
+		lostMsgsThresh:        0,
+		lastWorkerCheckpoints: make(map[uint32]uint64),
+		workers:               make(WorkerPool),
+		queryWorkers:          make(WorkerPool),
+		queryReplicas:         make(WorkerPool),
+		queryWorkersCallbook:  make(WorkerCallBook),
+		//queryWorkersDirectory:    make(WorkerDirectory),
+		//workersDirectory:         make(WorkerDirectory),
 		superStepNumber:          1,
 		UnimplementedCoordServer: coordgRPC.UnimplementedCoordServer{},
+	}
+}
+
+func (c *Coord) assignQueryWorkers(workerCount int) {
+	// assign logical ids
+	// assign main/replica
+	c.queryWorkers = make(WorkerPool)
+	c.queryReplicas = make(WorkerPool)
+	c.queryWorkersCallbook = make(WorkerCallBook)
+
+	if len(c.workers) < workerCount*2 {
+		log.Fatalf(
+			"Do not have enough workers to perform query. "+
+				"Worker count: %v, Desired Worker count: %v\n",
+			len(c.workers),
+			workerCount,
+		)
+	}
+
+	logicalId := uint32(0)
+	idx := 0
+	for _, workerNode := range c.workers {
+		if idx%2 == 0 {
+			c.queryWorkers[logicalId] = WorkerNode{
+				WorkerConfigId:   workerNode.WorkerConfigId,
+				WorkerLogicalId:  logicalId,
+				WorkerAddr:       workerNode.WorkerAddr,
+				WorkerFCheckAddr: workerNode.WorkerFCheckAddr,
+				WorkerListenAddr: workerNode.WorkerListenAddr,
+				IsReplica:        false,
+				//Client:           workerNode.Client,
+			}
+			fmt.Printf(
+				"Worker %v assigned logical id %v as isReplica %v\n",
+				workerNode.WorkerConfigId, logicalId, workerNode.IsReplica,
+			)
+			client, err := util.DialRPC(workerNode.WorkerListenAddr)
+			if err != nil {
+				log.Fatalf(
+					"cannot create client for worker %v addr %v\n",
+					workerNode.WorkerConfigId, workerNode.WorkerListenAddr,
+				)
+			}
+
+			c.queryWorkersCallbook[logicalId] = client
+			//c.queryWorkersDirectory[logicalId] = workerNode.WorkerListenAddr
+		} else {
+			c.queryReplicas[logicalId] = WorkerNode{
+				WorkerConfigId:   workerNode.WorkerConfigId,
+				WorkerLogicalId:  logicalId,
+				WorkerAddr:       workerNode.WorkerAddr,
+				WorkerFCheckAddr: workerNode.WorkerFCheckAddr,
+				WorkerListenAddr: workerNode.WorkerListenAddr,
+				IsReplica:        true,
+				//Client:           workerNode.Client,
+			}
+			fmt.Printf(
+				"Worker %v assigned logical id %v as isReplica %v\n",
+				workerNode.WorkerConfigId, logicalId,
+				c.queryReplicas[logicalId].IsReplica,
+			)
+		}
+
+		// assign the same logical id for main & replica
+		if idx%2 != 0 {
+			logicalId++
+		}
+
+		idx++
+		if int(logicalId) == workerCount {
+			break
+		}
+	}
+}
+
+func (c *Coord) handleFailover(logicalId uint32) {
+	mainWorker := c.queryReplicas[logicalId]
+	c.queryWorkers[logicalId] = mainWorker
+	//c.queryWorkersDirectory[logicalId] = mainWorker.WorkerListenAddr
+	delete(c.queryReplicas, logicalId)
+
+	var newReplica WorkerNode
+	for _, w := range c.workers {
+		if !c.IsActiveWorker(w) {
+			newReplica = w
+			break
+		}
+	}
+
+	if newReplica != (WorkerNode{}) {
+		c.queryReplicas[logicalId] = newReplica
+		// todo
+	} else {
+		// logging
+		log.Printf("Unable to assign replicas - not enough workers\n")
+	}
+
+	// broadcast main worker to other workers
+	c.workerDoneFailover = make(chan *rpc.Call, len(c.queryWorkers))
+	for wLogicalId, workerNode := range c.queryWorkers {
+		if wLogicalId != logicalId {
+			log.Printf(
+				"Coord: handleFailover: calling"+
+					" HandleFailover on worker %v\n", wLogicalId,
+			)
+			promotedWorker := PromotedWorker{
+				LogicalId: logicalId,
+				Worker:    mainWorker,
+			}
+			var result PromotedWorker
+			c.queryWorkersCallbook[wLogicalId].Go(
+				"Worker.HandleFailover", promotedWorker, &result,
+				c.workerDoneFailover,
+			)
+
+		} else {
+			replicaWorker := PromotedWorker{
+				LogicalId: logicalId,
+				Worker:    newReplica,
+			}
+			var result PromotedWorker
+			c.queryWorkersCallbook[workerNode.WorkerLogicalId].Call(
+				"Worker.UpdateReplica", replicaWorker, &result,
+			)
+		}
+	}
+	go c.blockForWorkerUpdate(len(c.queryWorkers)-1, c.workerDoneFailover)
+}
+
+func (c *Coord) IsActiveWorker(w WorkerNode) bool {
+	_, isMain := c.queryWorkers[w.WorkerLogicalId]
+	_, isReplica := c.queryReplicas[w.WorkerLogicalId]
+	return isMain || isReplica
+}
+
+func (c *Coord) getAllWorkersReady() bool {
+	c.workerReadyMapMutex.Lock()
+
+	// if all workers are ready, call RevertToLastCheckpoint
+	allWorkersReady := true
+
+	for _, ready := range c.workerReadyMap {
+		if !ready {
+			allWorkersReady = false
+			break
+		}
+	}
+	c.workerReadyMapMutex.Unlock()
+
+	return allWorkersReady
+}
+
+// this function does what JoinWorker previously did.
+//this is because we want to restart a checkpoint not when a failing worker
+//rejoins, but when all workers update their callbook in the case of a failure.
+// this is the failover handling that *no longer requires* the failing worker to
+//rejoin the same query!
+func (c *Coord) blockForWorkerUpdate(
+	numWorkers int,
+	workerDoneFailover chan *rpc.Call,
+) {
+	readyWorkerCounter := 0
+
+	for {
+		select {
+		case call := <-workerDoneFailover:
+			if call.Error != nil {
+				log.Printf(
+					"blockForWorkerUpdate - %v: received error: %v\n",
+					call.ServiceMethod, call.Error,
+				)
+			} else {
+				if updatedWorker, ok := call.Reply.(*PromotedWorker); ok {
+					readyWorkerCounter++
+					log.Printf(
+						"blockForWorkerUpdate - %v: %d workers are"+
+							" ready!\n", call.ServiceMethod, readyWorkerCounter,
+					)
+
+					if readyWorkerCounter == numWorkers {
+						// when all workers updated their callbook,
+						// restart the superstep
+						c.workerReadyMapMutex.Lock()
+						c.workerReadyMap[updatedWorker.LogicalId] = true
+						c.workerReadyMapMutex.Unlock()
+
+						allWorkersReady := c.getAllWorkersReady()
+
+						if allWorkersReady {
+							log.Printf(
+								"blockForWorkerUpdate: all %v workers"+
+									" ready, calling restartCheckpoint!\n",
+								len(c.workerReadyMap),
+							)
+							c.restartCheckpoint()
+							c.blockWorkersReady(
+								len(c.workerReadyMap),
+								c.workerDoneRestart,
+							)
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -222,6 +570,9 @@ func (c *Coord) blockWorkersReady(
 	readyWorkerCounter := 0
 	inactiveWorkerCounter := 0
 	var computeResult interface{} // result from a single superstep
+	superstepMessages := make(VertexMessages)
+	workerVertices := make(WorkerVertices)
+	var workerVerticesMutex sync.Mutex
 
 	for {
 		select {
@@ -240,6 +591,32 @@ func (c *Coord) blockWorkersReady(
 					if ssComplete.CurrentValue != nil {
 						computeResult = ssComplete.CurrentValue
 					}
+
+					// add worker's vertex messages to the messages collection
+					for vId, messages := range ssComplete.Messages {
+						superstepMessages[vId] = messages
+					}
+				}
+
+				if startComplete, ok := call.Reply.(*StartSuperStepResult); ok {
+					log.Printf(
+						"!!!!!!Coord completed startquery for worker"+
+							" %v, vertices: %v\n",
+						startComplete.WorkerLogicalId,
+						startComplete.Vertices,
+					)
+					log.Printf(
+						"!!!!!!Coord BEFORE workervertices: %v\n",
+						workerVertices,
+					)
+					workerVerticesMutex.Lock()
+					// TODO bug: something is wrong with workercallbook & ids
+					workerVertices[startComplete.WorkerLogicalId] = startComplete.Vertices
+					log.Printf(
+						"!!!!!!Coord AFTER workervertices: %v\n",
+						workerVertices,
+					)
+					workerVerticesMutex.Unlock()
 				}
 
 				readyWorkerCounter++
@@ -266,6 +643,8 @@ func (c *Coord) blockWorkersReady(
 						isSuccess:          true,
 						value:              computeResult,
 						isRestart:          isRestart,
+						messages:           superstepMessages,
+						workerVertices:     workerVertices,
 					}
 					log.Printf(
 						"blockWorkersReady - all workers are"+
@@ -310,6 +689,70 @@ func (c *Coord) UpdateCheckpoint(
 	return nil
 }
 
+// TODO we need a framework to invoke a given RPC on all workers and wait for
+// them to finish, and reuse that framework. function: pass in the RPC name,
+//return the results back to the caller
+//func (c *Coord) endQuery(
+//	method string, params interface{},
+//	workerDoneCh chan *rpc.Call
+//) {
+//	for _, wClient := range c.queryWorkersCallbook {
+//		var result interface{}
+//
+//		wClient.Go(
+//			fmt.Sprintf("Worker.%s", method), params, &result,
+//			workerDoneCh)
+//	}
+//
+//	readyWorkerCounter := 0
+//	numWorkers := len(c.queryWorkers)
+//
+//	for {
+//		select {
+//		case call := <-workerDoneCh:
+//			log.Printf("Coord endQuery call done: %v\n", call)
+//			//reply := call.Reply
+//			readyWorkerCounter++
+//			if readyWorkerCounter == numWorkers {
+//				log.Printf("Coord endQuery all %v workers finished query\n",
+//					readyWorkerCounter)
+//				return
+//			}
+//		}
+//	}
+//}
+func (c *Coord) endQuery(params EndQuery) {
+	readyWorkerCounter := 0
+	numWorkers := len(c.queryWorkers)
+	workerDoneCh := make(chan *rpc.Call, numWorkers)
+
+	for wId, wClient := range c.queryWorkersCallbook {
+		var result EndQuery
+
+		wClient.Go(
+			fmt.Sprintf("Worker.EndQuery"), params, &result,
+			workerDoneCh,
+		)
+		log.Printf("Coord endQuery: called EndQuery on worker %v\n", wId)
+	}
+
+	for {
+		select {
+		case call := <-workerDoneCh:
+			log.Printf("Coord endQuery call done: %v\n", call)
+			//reply := call.Reply
+			readyWorkerCounter++
+			if readyWorkerCounter == numWorkers {
+				log.Printf(
+					"Coord endQuery all %v workers finished query\n",
+					readyWorkerCounter,
+				)
+				return
+			}
+		}
+	}
+}
+
 func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
@@ -327,6 +770,19 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			c.workerReadyMap[wId] = false
 			c.workerReadyMapMutex.Unlock()
 		case result := <-c.allWorkersReady:
+			// if the result is from StartQuery,
+			//send the worker vertices to client (
+			// notify channel that worker vertices are populated)
+			if len(result.workerVertices) > 0 {
+				log.Printf(
+					"!!!!!!!Coord - created worker vertices: %v\n",
+					result.workerVertices,
+				)
+				c.fetchGraphDone <- result.workerVertices
+			}
+
+			// here the messages of for a given superstep for all vertices
+			// is collected
 			if result.allWorkersInactive {
 				log.Printf(
 					"Compute: complete with result %v!\n",
@@ -336,6 +792,23 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 					"Completed computation with result %v\n",
 					result.value,
 				)
+
+				// send ssn to queryProgress channel
+				//c.queryProgress <- queryProgress{
+				//	superstepNumber: c.
+				//		superStepNumber, done: true,
+				//	messages: result.messages,
+				//}
+
+				// TODO RPC to instruct all workers that the computation
+				// finished
+				endQuery := EndQuery{}
+				go c.endQuery(endQuery)
+				log.Printf(
+					"Compute: finished endQuery, sending result %v\n",
+					result.value,
+				)
+
 				if result.value == nil {
 					// target vertex does not exist
 					return -1, nil
@@ -358,14 +831,21 @@ func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 			)
 
 			c.workerDoneCompute = make(chan *rpc.Call, numWorkers)
-			for _, wClient := range c.queryWorkers {
+			for _, worker := range c.queryWorkersCallbook {
 				var result ProgressSuperStepResult
-				wClient.Go(
+				worker.Go(
 					"Worker.ComputeVertices", &progressSuperStep, &result,
 					c.workerDoneCompute,
 				)
 			}
 			go c.blockWorkersReady(numWorkers, c.workerDoneCompute)
+
+			// send ssn to queryProgress channel
+			//c.queryProgress <- queryProgress{
+			//	superstepNumber: c.
+			//		superStepNumber, done: false,
+			//	messages: result.messages,
+			//}
 
 			duration := time.Since(start)
 			logger.Printf(
@@ -385,11 +865,11 @@ func (c *Coord) restartCheckpoint() {
 
 	restartSuperStep := RestartSuperStep{
 		SuperStepNumber: checkpointNumber, NumWorkers: uint8(numWorkers),
-		Query: c.query, WorkerDirectory: c.queryWorkersDirectory,
+		Query: c.query,
 	}
 
 	c.workerDoneRestart = make(chan *rpc.Call, numWorkers)
-	for wId, wClient := range c.queryWorkers {
+	for wId, wClient := range c.queryWorkersCallbook {
 		log.Printf(
 			"restart checkpoint: calling"+
 				" RevertToLastCheckpoint on worker %v\n", wId,
@@ -403,10 +883,11 @@ func (c *Coord) restartCheckpoint() {
 	c.superStepNumber = checkpointNumber
 }
 
+// todo: joinworker only adds to c.workers
 func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
-	log.Printf("JoinWorker: Adding worker %d\n", w.WorkerId)
+	log.Printf("JoinWorker: Adding worker %d\n", w.WorkerConfigId)
 
-	client, err := util.DialRPC(w.WorkerListenAddr)
+	_, err := util.DialRPC(w.WorkerListenAddr)
 	if err != nil {
 		log.Printf(
 			"JoinWorker: coord could not dial worker addr %v, err: %v\n",
@@ -415,67 +896,17 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		return err
 	}
 
-	c.queryWorkersDirectory[w.WorkerId] = w.WorkerListenAddr
-
 	go c.monitor(w)
 
-	log.Printf(
-		"JoinWorker: New Worker %d successfully added. "+
-			"%d Workers joined\n",
-		w.WorkerId, len(c.workers),
-	)
-
-	if _, ok := c.queryWorkers[w.WorkerId]; ok {
-		// joining worker is restarted process of failed worker used in current query
-		log.Printf(
-			"JoinWorker: Worker %d added to the current query!\n",
-			w.WorkerId,
-		)
-		c.queryWorkers[w.WorkerId] = client
-		c.workers[w.WorkerId] = client
-
-		c.workerReadyMapMutex.Lock()
-		c.workerReadyMap[w.WorkerId] = true
-
-		// if all workers are ready, call RevertToLastCheckpoint
-		allWorkersReady := true
-
-		for _, ready := range c.workerReadyMap {
-			if !ready {
-				allWorkersReady = false
-				break
-			}
-		}
-		c.workerReadyMapMutex.Unlock()
-
-		if allWorkersReady {
-			log.Printf(
-				"Join Worker: all %v workers ready, "+
-					"calling restartCheckpoint!\n", len(c.workerReadyMap),
-			)
-			c.restartCheckpoint() // does this need to be c.
-			// restartCheckpoint for data to be persisted in c?
-			c.blockWorkersReady(
-				len(c.workerReadyMap),
-				c.workerDoneRestart,
-			)
-		}
-	} else {
-		c.workers[w.WorkerId] = client
-		log.Printf(
-			"JoinWorker: Worker %d will be added in the next query!\n",
-			w.WorkerId,
-		)
-	}
+	//w.Client = client
+	c.workers[w.WorkerConfigId] = w
+	fmt.Printf("JoinWorker: workers: %v\n", c.workers)
 
 	log.Printf(
 		"JoinWorker: New Worker %d successfully added. "+
 			"%d Workers joined\n",
-		w.WorkerId, len(c.workers),
+		w.WorkerConfigId, len(c.workers),
 	)
-
-	log.Printf("JoinWorker: coord: %v\n", c)
-	log.Printf("JoinWorker: workers: %v\n", c.workers)
 
 	// return nil for no errors
 	return nil
@@ -516,7 +947,7 @@ func (c *Coord) monitor(w WorkerNode) {
 			epochNonce,
 			strings.Split(c.workerAPIListenAddr, ":")[0] + ":0",
 			w.WorkerFCheckAddr,
-			c.lostMsgsThresh, w.WorkerId,
+			c.lostMsgsThresh, w.WorkerConfigId,
 		},
 	)
 	if err != nil || notifyCh == nil {
@@ -527,16 +958,33 @@ func (c *Coord) monitor(w WorkerNode) {
 		)
 	}
 
-	log.Printf("monitor: Fcheck for Worker %d running\n", w.WorkerId)
+	log.Printf("monitor: Fcheck for Worker %d running\n", w.WorkerConfigId)
 	for {
 		select {
 		case notify := <-notifyCh:
 			log.Printf(
-				"monitor: worker %v failed: %s\n", w.WorkerId,
+				"monitor: worker %v failed: %s\n", w.WorkerConfigId,
 				notify,
 			)
 			if len(c.queryWorkers) > 0 {
-				c.restartSuperStepCh <- w.WorkerId
+				worker := c.workers[w.WorkerConfigId]
+
+				if _, ok := c.queryWorkers[worker.
+					WorkerLogicalId]; ok {
+					c.handleFailover(w.WorkerConfigId)
+					c.blockWorkersReady(
+						len(c.queryWorkers),
+						c.workerDoneFailover,
+					)
+				} else if _, ok := c.queryReplicas[worker.
+					WorkerLogicalId]; ok {
+					// try to find new replica...
+				} else {
+					// return
+				}
+
+				c.restartSuperStepCh <- worker.WorkerLogicalId
+
 				return
 			}
 		}
@@ -584,7 +1032,16 @@ func (c *Coord) listenClientsgRPC(clientAPIListenAddr string) {
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("listenClients: Error while serving : %v", err)
 	}
+}
 
+func (c *Coord) GetWorkerDirectory() WorkerDirectory {
+	directory := make(WorkerDirectory)
+
+	for _, workerNode := range c.queryWorkers {
+		directory[workerNode.WorkerLogicalId] = workerNode.WorkerListenAddr
+	}
+
+	return directory
 }
 
 // Only returns when network or other unrecoverable errors occur

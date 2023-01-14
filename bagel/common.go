@@ -1,8 +1,6 @@
 package bagel
 
-import (
-	"net/rpc"
-)
+import "net/rpc"
 
 // constants are used as msgType for the messages
 const (
@@ -13,16 +11,26 @@ const (
 )
 
 type WorkerNode struct {
-	WorkerId         uint32
+	WorkerConfigId   uint32
+	WorkerLogicalId  uint32
 	WorkerAddr       string
 	WorkerFCheckAddr string
 	WorkerListenAddr string
+	IsReplica        bool
+	//Client           *rpc.Client
 }
 
 type StartSuperStep struct {
 	NumWorkers      uint8
 	WorkerDirectory WorkerDirectory
+	WorkerLogicalId uint32
+	ReplicaAddr     string
 	Query           Query
+}
+
+type StartSuperStepResult struct {
+	WorkerLogicalId uint32
+	Vertices        []uint64
 }
 
 type ProgressSuperStep struct {
@@ -31,11 +39,21 @@ type ProgressSuperStep struct {
 	IsRestart    bool
 }
 
+type VertexMessages map[uint64][]Message
+
+type WorkerVertices map[uint32][]uint64
+
+type VertexMessagesRPC struct {
+	vertexMessages []Message
+}
+
 type ProgressSuperStepResult struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
 	IsActive     bool
 	CurrentValue interface{}
+	// experimental
+	Messages VertexMessages
 }
 
 type RestartSuperStep struct {
@@ -44,6 +62,12 @@ type RestartSuperStep struct {
 	NumWorkers      uint8
 	Query           Query
 }
+
+//type UpdateMainReplica struct {
+//	LogicalId  uint32
+//	Worker
+//	//WorkerPair FailoverQueryWorker
+//}
 
 type CheckpointMsg struct {
 	SuperStepNumber uint64
@@ -65,8 +89,27 @@ type QueryResult struct {
 	// float64 for pagerank, int for shortest path
 }
 
+type EndQuery struct {
+}
+
 // WorkerDirectory maps worker ids to address (string)
 type WorkerDirectory map[uint32]string
 
 // WorkerCallBook maps worker ids to rpc clients (connections)
 type WorkerCallBook map[uint32]*rpc.Client
+
+//type FailoverQueryWorker struct {
+//	main    *rpc.Client
+//	replica *rpc.Client
+//}
+
+type PromotedWorker struct {
+	LogicalId uint32
+	Worker    WorkerNode
+}
+
+//type FailoverWorkerCallBook map[uint32]FailoverQueryWorker
+
+type WorkerPool map[uint32]WorkerNode
+
+//type
