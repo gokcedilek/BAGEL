@@ -17,6 +17,7 @@ type Checkpoint struct {
 }
 
 func (w *Worker) getConnection() (*sql.DB, error) {
+	// config's workerID to avoid conflict w/ replica
 	db, err := sql.Open(
 		"sqlite3", fmt.Sprintf("checkpoints%v.db", w.config.WorkerId),
 	)
@@ -100,7 +101,7 @@ func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
 	err := w.ReplicaClient.Call("Worker.SyncReplica", checkpoint, &response)
 	util.CheckErr(
 		err, "Sync Replica: Worker %v could not sync with replica: %v\n",
-		w.config.WorkerId, err,
+		w.LogicalId, err,
 	)
 	return nil
 }
@@ -111,7 +112,7 @@ func (w *Worker) storeCheckpoint(
 ) (Checkpoint, error) {
 
 	// Call from replica; do not store checkpoint again.
-	if !isSyncReplica {
+	if isSyncReplica {
 		return Checkpoint{}, nil
 	}
 
@@ -177,7 +178,7 @@ func (w *Worker) storeCheckpoint(
 
 	checkpointMsg := CheckpointMsg{
 		SuperStepNumber: checkpoint.SuperStepNumber,
-		WorkerId:        w.config.WorkerId,
+		WorkerId:        w.LogicalId,
 	}
 
 	var reply CheckpointMsg

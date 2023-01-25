@@ -172,16 +172,20 @@ func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *interface{},
 ) error {
 
-	log.Printf("StartQuery: startSuperStep: %v\n", startSuperStep)
+	log.Printf("StartQuery: startSuperStep: %v, isReplica: %v\n", startSuperStep, startSuperStep.HasReplicaInitialized)
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
 	w.LogicalId = startSuperStep.WorkerLogicalId
-	replicaClient, err := util.DialRPC(startSuperStep.ReplicaAddr)
-	w.ReplicaClient = replicaClient
+
+	if !startSuperStep.HasReplicaInitialized {
+		replicaClient, err := util.DialRPC(startSuperStep.ReplicaAddr)
+		util.CheckErr(err, "StartQuery: Worker %v could not dial replica\n", w.LogicalId)
+		w.ReplicaClient = replicaClient
+	}
 
 	// setup local checkpoints storage for the worker
-	err = w.initializeCheckpoints()
+	err := w.initializeCheckpoints()
 	util.CheckErr(
 		err, "StartQuery: Worker %v could not setup checkpoints db\n",
 		w.config.WorkerId,
@@ -213,6 +217,11 @@ func (w *Worker) StartQuery(
 		), log.LstdFlags,
 	)
 
+	if !startSuperStep.HasReplicaInitialized {
+		startSuperStep.HasReplicaInitialized = true
+		var replicaResult interface{}
+		w.ReplicaClient.Call("Worker.StartQuery", startSuperStep, &replicaResult)
+	}
 	return nil
 }
 
@@ -224,8 +233,7 @@ func (w *Worker) HandleFailover(
 ) error {
 	var err error
 	w.workerCallBook[req.LogicalId], err = util.DialRPC(
-		req.Worker.
-			WorkerListenAddr,
+		req.Worker.WorkerListenAddr,
 	)
 	w.workerDirectory[req.LogicalId] = req.Worker.WorkerListenAddr
 	*reply = req
@@ -548,9 +556,9 @@ func (w *Worker) ComputeVertices(
 }
 
 func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
-	_, err := w.storeCheckpoint(checkpoint, false)
+	_, err := w.storeCheckpoint(checkpoint, true)
 	util.CheckErr(err, "Failed to store checkpoint for replica")
-	return err
+	return nil
 }
 
 func (w *Worker) PutBatchedMessages(

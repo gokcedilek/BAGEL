@@ -97,9 +97,10 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	log.Printf("StartQuery: sending query: %v\n", coordQuery)
 
 	startSuperStep := StartSuperStep{
-		NumWorkers:      uint8(len(c.queryWorkers)),
-		WorkerDirectory: c.GetWorkerDirectory(),
-		Query:           coordQuery,
+		NumWorkers:            uint8(len(c.queryWorkers)),
+		WorkerDirectory:       c.GetWorkerDirectory(),
+		Query:                 coordQuery,
+		HasReplicaInitialized: false,
 	}
 
 	numWorkers := len(c.queryWorkers)
@@ -322,16 +323,18 @@ func (c *Coord) handleFailover(logicalId uint32) {
 	c.queryWorkersCallbook[logicalId] = mainWorkerClient
 	delete(c.queryReplicas, logicalId)
 
-	log.Printf("handle failover query replicas: %v\n", c.queryReplicas)
+	log.Printf("handleFailover: query replicas: %v\n", c.queryReplicas)
 
 	newReplica := c.GetIdleWorker()
 	if newReplica != (WorkerNode{}) {
 		newReplica.WorkerLogicalId = logicalId
 		c.queryReplicas[logicalId] = newReplica
-		// todo
+		// todo discuss w/ Gokce
+		// here the replica needs to be updated to store the most recent checkpoint.
+		// otherwise, if the main worker fails before the next checkpoint we will fail.
 	} else {
 		// logging
-		log.Printf("Unable to assign replicas - not enough workers\n")
+		log.Printf("handleFailover: Unable to assign replicas - not enough workers\n")
 	}
 
 	log.Printf("Coord - updated workers: %v\n", c.queryWorkers)
@@ -871,9 +874,6 @@ func (c *Coord) listenClientsgRPC(clientAPIListenAddr string) {
 		clientAPIListenAddr,
 	)
 
-	//for {
-	//
-	//}
 	s := grpc.NewServer()
 	coordgRPC.RegisterCoordServer(s, c)
 
