@@ -71,7 +71,7 @@ func CreateTable(
 }
 
 func AddGraph(svc *dynamodb.Client, filePath string, tableName string) {
-	vertices := parseInputGraph(filePath)
+	vertices := ParseInputGraph(filePath)
 	batches := CreateBatches(vertices)
 	BatchInsertVertices(svc, tableName, batches)
 }
@@ -96,7 +96,7 @@ func waitForTable(ctx context.Context, db *dynamodb.Client, tn string) error {
 	return err
 }
 
-func parseInputGraph(filePath string) []Vertex {
+func ParseInputGraph(filePath string) []Vertex {
 	graph := make(map[uint64][]uint64)
 
 	file, err := os.Open(filePath)

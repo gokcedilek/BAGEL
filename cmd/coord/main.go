@@ -11,7 +11,9 @@ import (
 func main() {
 
 	// create a log file and log to both console and terminal
-	logFile, err := os.OpenFile("bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(
+		"bagel.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -25,8 +27,10 @@ func main() {
 	util.CheckErr(err, "Error reading coord config: %v\n", err)
 
 	coord := bagel.NewCoord()
-	err = coord.Start(config.ClientAPIListenAddr,
+	err = coord.Start(
+		config.ClientAPIListenAddr,
 		config.WorkerAPIListenAddr,
+		config.ExternalAPIListenAddr,
 		config.LostMsgsThresh,
 		config.StepsBetweenCheckpoints,
 	)
