@@ -24,9 +24,10 @@ Possible operations are:
 
 - In the `client` directory, run `npm run start`
 - In the `envoy` directory, run
+  - (FIRST TIME)
+  - `docker build . -t bagel-envoy` &&
   - `docker run --name bagel-envoy -p 
-8080:8080 -p 9091:9091 bagel-envoy` if
-    this is your first time running the project
+8080:8080 -p 9091:9091 bagel-envoy` 
   - `docker start bagel-envoy` if the
     container exists
 - (No longer needed) In the directory where you 
