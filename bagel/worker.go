@@ -169,7 +169,7 @@ func (w *Worker) retrieveVertices(
 }
 
 func (w *Worker) StartQuery(
-	startSuperStep StartSuperStep, reply *interface{},
+	startSuperStep StartSuperStep, reply *StartSuperStepResult,
 ) error {
 
 	log.Printf("StartQuery: startSuperStep: %v, isReplica: %v\n", startSuperStep, startSuperStep.HasReplicaInitialized)
@@ -222,6 +222,22 @@ func (w *Worker) StartQuery(
 		var replicaResult interface{}
 		w.ReplicaClient.Call("Worker.StartQuery", startSuperStep, &replicaResult)
 	}
+  
+  /*
+	// set worker vertices in reply
+	// reply.WorkerLogicalId = w.LogicalId
+	reply.WorkerLogicalId = w.config.WorkerId
+	vertexIds := make([]uint64, 0, len(w.Vertices))
+	for k, _ := range w.Vertices {
+		vertexIds = append(vertexIds, k)
+	}
+	reply.Vertices = vertexIds
+	log.Printf(
+		"!!!!Worker %v sending vertices: %v\n", reply.WorkerLogicalId,
+		reply.Vertices,
+	)
+  */
+
 	return nil
 }
 
@@ -463,6 +479,7 @@ func (w *Worker) ComputeVertices(
 		)
 	}
 
+	vertexMessages := make(VertexMessages)
 	hasActiveVertex := false
 	for _, vertex := range w.Vertices {
 		vertex.SetSuperStepInfo(w.SuperStep.Messages[vertex.Id])
@@ -472,6 +489,9 @@ func (w *Worker) ComputeVertices(
 			if vertex.IsActive {
 				hasActiveVertex = true
 			}
+
+			// add to vertex messages map
+			vertexMessages[vertex.Id] = messages
 		}
 
 		vertexType := PAGE_RANK
@@ -494,6 +514,10 @@ func (w *Worker) ComputeVertices(
 			//)
 		}
 	}
+
+	log.Printf(
+		"!!!!!Worker %v: vertex messages: %v\n", w.LogicalId, vertexMessages,
+	)
 
 	for worker, msgs := range w.SuperStep.Outgoing {
 		if worker == w.LogicalId {
@@ -545,6 +569,7 @@ func (w *Worker) ComputeVertices(
 	resp.SuperStepNum = args.SuperStepNum
 	resp.IsCheckpoint = args.IsCheckpoint
 	resp.IsActive = hasActiveVertex && (w.Query.QueryType != PAGE_RANK || args.SuperStepNum < MAX_ITERATIONS)
+	resp.Messages = vertexMessages
 
 	//duration := time.Since(start)
 	//w.logger.Printf(

@@ -23,6 +23,8 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoordClient interface {
 	StartQuery(ctx context.Context, in *Query, opts ...grpc.CallOption) (*QueryResult, error)
+	QueryProgress(ctx context.Context, in *QueryProgressRequest, opts ...grpc.CallOption) (Coord_QueryProgressClient, error)
+	FetchGraph(ctx context.Context, in *FetchGraphRequest, opts ...grpc.CallOption) (*FetchGraphResponse, error)
 }
 
 type coordClient struct {
@@ -42,11 +44,54 @@ func (c *coordClient) StartQuery(ctx context.Context, in *Query, opts ...grpc.Ca
 	return out, nil
 }
 
+func (c *coordClient) QueryProgress(ctx context.Context, in *QueryProgressRequest, opts ...grpc.CallOption) (Coord_QueryProgressClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Coord_ServiceDesc.Streams[0], "/coord.Coord/QueryProgress", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &coordQueryProgressClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Coord_QueryProgressClient interface {
+	Recv() (*QueryProgressResponse, error)
+	grpc.ClientStream
+}
+
+type coordQueryProgressClient struct {
+	grpc.ClientStream
+}
+
+func (x *coordQueryProgressClient) Recv() (*QueryProgressResponse, error) {
+	m := new(QueryProgressResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *coordClient) FetchGraph(ctx context.Context, in *FetchGraphRequest, opts ...grpc.CallOption) (*FetchGraphResponse, error) {
+	out := new(FetchGraphResponse)
+	err := c.cc.Invoke(ctx, "/coord.Coord/FetchGraph", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoordServer is the server API for Coord service.
 // All implementations must embed UnimplementedCoordServer
 // for forward compatibility
 type CoordServer interface {
 	StartQuery(context.Context, *Query) (*QueryResult, error)
+	QueryProgress(*QueryProgressRequest, Coord_QueryProgressServer) error
+	FetchGraph(context.Context, *FetchGraphRequest) (*FetchGraphResponse, error)
 	mustEmbedUnimplementedCoordServer()
 }
 
@@ -56,6 +101,12 @@ type UnimplementedCoordServer struct {
 
 func (UnimplementedCoordServer) StartQuery(context.Context, *Query) (*QueryResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartQuery not implemented")
+}
+func (UnimplementedCoordServer) QueryProgress(*QueryProgressRequest, Coord_QueryProgressServer) error {
+	return status.Errorf(codes.Unimplemented, "method QueryProgress not implemented")
+}
+func (UnimplementedCoordServer) FetchGraph(context.Context, *FetchGraphRequest) (*FetchGraphResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchGraph not implemented")
 }
 func (UnimplementedCoordServer) mustEmbedUnimplementedCoordServer() {}
 
@@ -88,6 +139,45 @@ func _Coord_StartQuery_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Coord_QueryProgress_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(QueryProgressRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(CoordServer).QueryProgress(m, &coordQueryProgressServer{stream})
+}
+
+type Coord_QueryProgressServer interface {
+	Send(*QueryProgressResponse) error
+	grpc.ServerStream
+}
+
+type coordQueryProgressServer struct {
+	grpc.ServerStream
+}
+
+func (x *coordQueryProgressServer) Send(m *QueryProgressResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Coord_FetchGraph_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchGraphRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoordServer).FetchGraph(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/coord.Coord/FetchGraph",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoordServer).FetchGraph(ctx, req.(*FetchGraphRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Coord_ServiceDesc is the grpc.ServiceDesc for Coord service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -99,7 +189,17 @@ var Coord_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "StartQuery",
 			Handler:    _Coord_StartQuery_Handler,
 		},
+		{
+			MethodName: "FetchGraph",
+			Handler:    _Coord_FetchGraph_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "QueryProgress",
+			Handler:       _Coord_QueryProgress_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "coord.proto",
 }

@@ -29,10 +29,23 @@ type StartSuperStep struct {
 	HasReplicaInitialized bool
 }
 
+type StartSuperStepResult struct {
+	WorkerLogicalId uint32
+	Vertices        []uint64
+}
+
 type ProgressSuperStep struct {
 	SuperStepNum uint64
 	IsCheckpoint bool
 	IsRestart    bool
+}
+
+type VertexMessages map[uint64][]Message
+
+type WorkerVertices map[uint32][]uint64
+
+type VertexMessagesRPC struct {
+	vertexMessages []Message
 }
 
 type ProgressSuperStepResult struct {
@@ -40,6 +53,8 @@ type ProgressSuperStepResult struct {
 	IsCheckpoint bool
 	IsActive     bool
 	CurrentValue interface{}
+	// experimental
+	Messages VertexMessages
 }
 
 type RestartSuperStep struct {
