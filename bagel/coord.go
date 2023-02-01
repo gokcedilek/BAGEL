@@ -6,18 +6,24 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"net/rpc"
 	"os"
 	coordgRPC "project/bagel/proto/coord"
-	"project/database"
+	"project/database/mongodb"
 	fchecker "project/fcheck"
 	"project/util"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	//"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
+)
+
+const (
+	coordProcesses = 3
 )
 
 // this is the start of the query where coord notifies workers to initialize
@@ -43,14 +49,15 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	}
 
 	// validate vertices sent by the client query
-	svc := database.GetDynamoClient()
+	client := mongodb.GetDatabaseClient()
+	collection := mongodb.GetCollection(client, q.TableName)
 	for _, vId := range q.Nodes {
-		// TODO: include db name as part of query
-		_, err := database.GetVertexByID(svc, int64(vId), q.TableName)
+		vertex, err := mongodb.GetVertexById(collection, vId)
 		if err != nil {
 			reply.Error = err.Error()
 			return &reply, nil
 		}
+		log.Printf("coord fetched query vertex %v\n", vertex)
 	}
 
 	// todo replace with workerCount from client
@@ -275,9 +282,11 @@ func (c *Coord) streamQueryProgress(
 /* end of proto config */
 
 type CoordConfig struct {
-	ClientAPIListenAddr     string // client will know this and use it to contact coord
-	WorkerAPIListenAddr     string // new joining workers will message this addr
-	LostMsgsThresh          uint8  // fcheck
+	ClientAPIListenAddr   string // client will know this and use it to contact coord
+	WorkerAPIListenAddr   string // new joining workers will message this addr
+	ExternalAPIListenAddr string // external HTTP endpoint to spin up/down
+	// workers
+	LostMsgsThresh          uint8 // fcheck
 	StepsBetweenCheckpoints uint64
 }
 
@@ -1009,27 +1018,29 @@ func (c *Coord) monitor(w WorkerNode) {
 	}
 }
 
-//func listenClients(clientAPIListenAddr string) {
-//
-//	wlisten, err := net.Listen("tcp", clientAPIListenAddr)
-//	if err != nil {
-//		log.Printf("listenClients: Error listening: %v\n", err)
-//	}
-//	log.Printf(
-//		"listenClients: Listening for clients at %v\n",
-//		clientAPIListenAddr,
-//	)
-//
-//	for {
-//		conn, err := wlisten.Accept()
-//		if err != nil {
-//			log.Printf(
-//				"listenClients: Error accepting client: %v\n", err,
-//			)
-//		}
-//		go rpc.ServeConn(conn) // blocks while serving connection until client hangs up
-//	}
-//}
+func (c *Coord) AddWorker(context *gin.Context) {
+	context.JSON(http.StatusOK, gin.H{"workerId": 1})
+}
+
+func (c *Coord) DeleteWorker(context *gin.Context) {
+	workerId := context.Param("id")
+	context.JSONP(http.StatusOK, gin.H{"workerId": workerId})
+}
+
+func (c *Coord) listenExternalRequests(externalAPIListenAddr string) {
+	router := gin.Default()
+	externalAPI := router.Group("/api")
+	{
+		externalAPI.POST("/worker", c.AddWorker)
+		externalAPI.DELETE("/worker/:id", c.DeleteWorker)
+	}
+	log.Printf(
+		"listenExternalRequests: Listening on %v\n", externalAPIListenAddr,
+	)
+	if err := router.Run(externalAPIListenAddr); err != nil {
+		log.Fatalf("listenExternalRequests: Error while serving : %v", err)
+	}
+}
 
 func (c *Coord) listenClientsgRPC(clientAPIListenAddr string) {
 	lis, err := net.Listen("tcp", clientAPIListenAddr)
@@ -1073,6 +1084,7 @@ func (c *Coord) GetIdleWorker() WorkerNode {
 // Only returns when network or other unrecoverable errors occur
 func (c *Coord) Start(
 	clientAPIListenAddr string, workerAPIListenAddr string,
+	externalAPIListenAddr string,
 	lostMsgsThresh uint8, checkpointSteps uint64,
 ) error {
 
@@ -1086,9 +1098,10 @@ func (c *Coord) Start(
 	util.CheckErr(err, "Coord could not register RPCs")
 
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(coordProcesses)
 	go listenWorkers(workerAPIListenAddr)
 	go c.listenClientsgRPC(clientAPIListenAddr)
+	go c.listenExternalRequests(externalAPIListenAddr)
 	wg.Wait()
 
 	// will never return

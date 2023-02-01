@@ -30,14 +30,20 @@ Possible operations are:
 8080:8080 -p 9091:9091 bagel-envoy` 
   - `docker start bagel-envoy` if the
     container exists
-- In the directory where you installed the
+- (No longer needed) In the directory where you 
+  installed the
   local DynamoDB client (see [here](https://github.com/ryanjhkim/bagel/tree/main/database)), run `java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar 
 -sharedDb` (keep this running)
 - In the `bagel` directory, run `make all`
   followed by `./bin/coord` and any number of
   worker commands, `./bin/worker 0`, `./bin/worker 1`, etc.
 
-### Setup the local DynamoDB client (LATEST!)
+### Setup the MongoDB Atlas database
+- Before you run coord and workers, setup the 
+  database with `./bin/database [prod|dev] 
+  <table name> <file path>`
+
+### Setup the local DynamoDB client
 
 - After you run the local DynamoDB client, you
   can upload graphs to the local database with

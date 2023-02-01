@@ -17,7 +17,7 @@ import (
 
 const CENTRAL_DB_NAME = "bagel-db"
 const DEFAULT_REGION = "us-east-2"
-const MAXIMUM_ITEMS_PER_BATCH = 25
+const MAXIMUM_ITEMS_PER_BATCH = 5
 
 type Graph map[uint64][]uint64
 

@@ -8,7 +8,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
-	database "project/database"
+	"project/database/mongodb"
 	fchecker "project/fcheck"
 	"project/util"
 	"sync"
@@ -113,18 +113,17 @@ func (w *Worker) retrieveVertices(
 	numWorkers uint8, tableName string,
 ) {
 	w.Vertices = make(map[uint64]*Vertex)
-	svc := database.GetDynamoClient()
-	vertices, err := database.GetPartitionForWorkerX(
-		svc,
-		tableName,
-		int(numWorkers),
-		int(w.LogicalId),
+
+	client := mongodb.GetDatabaseClient()
+	collection := mongodb.GetCollection(client, tableName)
+
+	vertices, err := mongodb.GetPartitionForWorkerX(
+		collection, int(numWorkers),int(w.LogicalId),
 	)
+
 	log.Printf(
-		"retrieveVertices: retrieved %v vertices for worker %v from the"+
-			" db!\n",
-		len(vertices),
-		w.config.WorkerId,
+		"retrieveVertices: worker %v: retrieved vertices %v\n",
+		w.config.WorkerId, vertices,
 	)
 	log.Printf("vertices: %v", vertices)
 	if err != nil {

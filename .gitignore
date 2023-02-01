@@ -5,3 +5,5 @@
 web-Google.txt
 web-Google.csv
 bin/*
+
+.env
