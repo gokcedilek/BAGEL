@@ -22,6 +22,10 @@ import (
 	"google.golang.org/grpc"
 )
 
+const (
+	coordProcesses = 3
+)
+
 // this is the start of the query where coord notifies workers to initialize
 // state for SuperStep 0
 func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
@@ -996,10 +1000,6 @@ func (c *Coord) monitor(w WorkerNode) {
 	}
 }
 
-//func Auth() {
-//
-//}
-
 func (c *Coord) AddWorker(context *gin.Context) {
 	context.JSON(http.StatusOK, gin.H{"workerId": 1})
 }
@@ -1069,7 +1069,7 @@ func (c *Coord) Start(
 	util.CheckErr(err, "Coord could not register RPCs")
 
 	wg := sync.WaitGroup{}
-	wg.Add(3)
+	wg.Add(coordProcesses)
 	go listenWorkers(workerAPIListenAddr)
 	go c.listenClientsgRPC(clientAPIListenAddr)
 	go c.listenExternalRequests(externalAPIListenAddr)
