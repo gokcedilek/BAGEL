@@ -13,6 +13,7 @@ import (
 	"project/database/mongodb"
 	fchecker "project/fcheck"
 	"project/util"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -66,9 +67,6 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 
 	// initialize workerReady map
 	c.workerReadyMap = make(map[uint32]bool)
-	//for k, _ := range c.queryWorkers {
-	//	c.workerReadyMap[k] = true
-	//}
 	for logicalId := range c.queryWorkers {
 		c.workerReadyMap[logicalId] = true
 	}
@@ -375,9 +373,23 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 		)
 	}
 
+	log.Printf("ASSIGN main/replica workers: %v\n", c.workers)
 	logicalId := uint32(0)
 	idx := 0
-	for i, workerNode := range c.workers {
+
+	// create a sorted iteration order over the map of workers
+	configIds := make([]uint32, 0, len(c.workers))
+	for id := range c.workers {
+		configIds = append(configIds, id)
+	}
+	sort.Slice(
+		configIds, func(i, j int) bool {
+			return configIds[i] < configIds[j]
+		},
+	)
+
+	for _, configId := range configIds {
+		workerNode := c.workers[configId]
 		if idx%2 == 0 {
 			c.queryWorkers[logicalId] = WorkerNode{
 				WorkerConfigId:   workerNode.WorkerConfigId,
@@ -399,10 +411,14 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				)
 			}
 
-			c.workers[i] = c.queryWorkers[logicalId]
+			c.workers[configId] = c.queryWorkers[logicalId]
 			c.queryWorkersCallbook[logicalId] = client
 			//c.queryWorkersDirectory[logicalId] = workerNode.WorkerListenAddr
 		} else {
+			log.Printf(
+				"idx: %v, worker id: %v, adding to query replicas\n",
+				idx, workerNode.WorkerConfigId,
+			)
 			c.queryReplicas[logicalId] = WorkerNode{
 				WorkerConfigId:   workerNode.WorkerConfigId,
 				WorkerLogicalId:  logicalId,
@@ -411,6 +427,7 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				WorkerListenAddr: workerNode.WorkerListenAddr,
 				IsReplica:        true,
 			}
+			c.workers[configId] = c.queryReplicas[logicalId]
 			fmt.Printf(
 				"Worker %v assigned logical id %v as isReplica %v\n",
 				workerNode.WorkerConfigId, logicalId,
@@ -431,16 +448,29 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 }
 
 func (c *Coord) handleFailover(logicalId uint32) {
+	log.Printf(
+		"BEFORE HANDLEFAILOVER query w: %v, query r: %v, "+
+			"logical id: %v\n",
+		c.queryWorkers,
+		c.queryReplicas, logicalId,
+	)
+
+	// update query workers
 	mainWorker := c.queryReplicas[logicalId]
 	c.queryWorkers[logicalId] = mainWorker
-	log.Printf("query w: %v, query r: %v\n", c.queryWorkers, c.queryReplicas)
-	log.Printf("logical id: %v, main worker: %v\n", logicalId, mainWorker)
 	mainWorkerClient, err := util.DialRPC(mainWorker.WorkerListenAddr)
 	util.CheckErr(err, "handleFailover - failed to dial new main worker node\n")
 	c.queryWorkersCallbook[logicalId] = mainWorkerClient
+
+	// update query replicas
 	delete(c.queryReplicas, logicalId)
 
-	log.Printf("handleFailover: query replicas: %v\n", c.queryReplicas)
+	log.Printf(
+		"AFTER HANDLEFAILOVER query w: %v, query r: %v, "+
+			"logical id: %v\n",
+		c.queryWorkers,
+		c.queryReplicas, logicalId,
+	)
 
 	newReplica := c.GetIdleWorker()
 	if newReplica != (WorkerNode{}) {
@@ -902,14 +932,16 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 
 	go c.monitor(w)
 
-	//w.Client = client
+	if _, ok := c.workers[w.WorkerConfigId]; ok {
+		log.Fatalf(
+			"JoinWorker: worker with config id %v already exists in"+
+				" workers!\n", w.WorkerConfigId,
+		)
+	}
 	c.workers[w.WorkerConfigId] = w
-	fmt.Printf("JoinWorker: workers: %v\n", c.workers)
-
-	log.Printf(
-		"JoinWorker: New Worker %d successfully added. "+
-			"%d Workers joined\n",
-		w.WorkerConfigId, len(c.workers),
+	fmt.Printf(
+		"JoinWorker: added worker %v, workers: %v\n",
+		w.WorkerConfigId, c.workers,
 	)
 
 	// return nil for no errors
@@ -967,24 +999,28 @@ func (c *Coord) monitor(w WorkerNode) {
 		select {
 		case notify := <-notifyCh:
 			log.Printf(
-				"monitor: worker %v failed: %s\n", w.WorkerConfigId,
+				"monitor: failedWorker %v failed: %s\n", w.WorkerConfigId,
 				notify,
 			)
-			log.Printf("monitor: query workers: %v\n", c.queryWorkers)
-			if len(c.queryWorkers) > 0 {
-				worker := c.workers[w.WorkerConfigId]
-				delete(c.workers, w.WorkerConfigId)
-				log.Printf("worker logical id: %v\n", worker.WorkerLogicalId)
+			isRunningQuery := len(c.queryWorkers) > 0
+			failedWorker := c.workers[w.WorkerConfigId]
+			delete(c.workers, w.WorkerConfigId)
 
-				if _, ok := c.queryWorkers[worker.
-					WorkerLogicalId]; ok {
-					log.Printf("monitor: if case\n")
-					c.handleFailover(worker.WorkerLogicalId)
-				} else if _, ok := c.queryReplicas[worker.
-					WorkerLogicalId]; ok {
+			if isRunningQuery {
+				_, isMainWorker := c.queryWorkers[failedWorker.
+					WorkerLogicalId]
+				_, isReplicaWorker := c.queryReplicas[failedWorker.
+					WorkerLogicalId]
+				log.Printf(
+					"is main: %v, is replica: %v\n", isMainWorker,
+					isReplicaWorker,
+				)
+				if isMainWorker {
+					log.Printf("monitor: MAIN WORKER failed\n")
+					c.handleFailover(failedWorker.WorkerLogicalId)
+				} else if isReplicaWorker {
 					log.Printf(
-						"monitor: replica failed; searching for" +
-							" replacements\n",
+						"monitor: REPLICA WORKER failed\n",
 					)
 					newReplica := c.GetIdleWorker()
 
@@ -995,22 +1031,21 @@ func (c *Coord) monitor(w WorkerNode) {
 						)
 					} else {
 						replicaWorker := PromotedWorker{
-							LogicalId: worker.WorkerLogicalId,
+							LogicalId: failedWorker.WorkerLogicalId,
 							Worker:    newReplica,
 						}
 						var result PromotedWorker
-						c.queryWorkersCallbook[worker.WorkerLogicalId].Call(
+						c.queryWorkersCallbook[failedWorker.WorkerLogicalId].Call(
 							"Worker.UpdateReplica", replicaWorker, &result,
 						)
 					}
 				} else {
 					log.Printf(
-						"monitor: idle worker failed (" +
-							"no one cares) :) \n",
+						"monitor: IDLE WORKER failed\n",
 					)
 				}
 
-				c.restartSuperStepCh <- worker.WorkerLogicalId
+				c.restartSuperStepCh <- failedWorker.WorkerLogicalId
 
 				return
 			}
@@ -1075,6 +1110,7 @@ func (c *Coord) GetIdleWorker() WorkerNode {
 	for _, w := range c.workers {
 		if !c.IsActiveWorker(w) {
 			newReplica = w
+			log.Printf("found idle worker: %v\n", w)
 			break
 		}
 	}
