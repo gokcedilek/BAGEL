@@ -454,6 +454,7 @@ func (c *Coord) handleFailover(logicalId uint32) {
 		c.queryWorkers,
 		c.queryReplicas, logicalId,
 	)
+	log.Printf("HandleFailOver - last checkpoint # %v", c.lastCheckpointNumber)
 	c.promoteReplicaWorkerToMain(logicalId)
 	c.broadcastNewMainWorker(logicalId)
 	c.promoteWorkerToReplica(logicalId)
@@ -544,6 +545,7 @@ func (c *Coord) initReplicaCheckpoints(replica WorkerNode, logicalId uint32) {
 			WorkerDirectory:       c.GetWorkerDirectory(),
 			WorkerLogicalId:       logicalId,
 			HasReplicaInitialized: true,
+			Query:                 c.query,
 		}
 
 		var superStepReply StartSuperStep

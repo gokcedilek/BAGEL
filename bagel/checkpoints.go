@@ -28,6 +28,28 @@ func (w *Worker) getConnection() (*sql.DB, error) {
 	return db, nil
 }
 
+func (w *Worker) resetCheckpoints() error {
+	// reset checkpoints
+	db, err := w.getConnection()
+
+	if err != nil {
+		log.Printf(
+			"initializeCheckpoints: connection error: %v"+
+				"\n", err,
+		)
+		return err
+	}
+
+	if _, err := db.Exec("delete from checkpoints"); err != nil {
+		log.Printf(
+			"initializeCheckpoints: Failed execute"+
+				" command: %v\n", err,
+		)
+		return err
+	}
+	return nil
+}
+
 func (w *Worker) initializeCheckpoints() error {
 	db, err := w.getConnection()
 
@@ -48,15 +70,6 @@ func (w *Worker) initializeCheckpoints() error {
 	  );`
 
 	if _, err := db.Exec(createCheckpoints); err != nil {
-		log.Printf(
-			"initializeCheckpoints: Failed execute"+
-				" command: %v\n", err,
-		)
-		return err
-	}
-
-	// reset checkpoints
-	if _, err := db.Exec("delete from checkpoints"); err != nil {
 		log.Printf(
 			"initializeCheckpoints: Failed execute"+
 				" command: %v\n", err,
@@ -86,6 +99,9 @@ func (w *Worker) checkpoint(superStepNum uint64) Checkpoint {
 	}
 }
 
+/*
+	Invoked by main worker
+*/
 func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
 	if w.ReplicaClient == nil {
 		client, err := util.DialRPC(w.Replica.WorkerListenAddr)
@@ -108,26 +124,19 @@ func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
 
 func (w *Worker) storeCheckpoint(
 	checkpoint Checkpoint,
-	isSyncReplica bool,
+	isInvokedByReplica bool,
 ) (Checkpoint, error) {
-
-	// Call from replica; do not store checkpoint again.
-	if isSyncReplica {
-		return Checkpoint{}, nil
-	}
-
 	db, err := w.getConnection()
 	if err != nil {
 		os.Exit(1)
 	}
 	defer db.Close()
-
 	// clear larger checkpoints that were saved
 	if _, err := db.Exec(
 		"delete from checkpoints where lastCheckpointNumber"+
 			">=?", checkpoint.SuperStepNumber,
 	); err != nil {
-		log.Printf(
+		log.Fatalf(
 			"storeCheckpoint: Failed execute"+
 				" command: %v\n", err,
 		)
@@ -150,21 +159,30 @@ func (w *Worker) storeCheckpoint(
 		buf2.Bytes(),
 	)
 	if err != nil {
-		log.Printf(
+		log.Fatalf(
 			"storeCheckpoint: error inserting into db: %v"+
 				"\n", err,
 		)
 	}
 
-	if w.Replica != (WorkerNode{}) && isSyncReplica {
+	// If 'this' == replica worker, want to store checkpoint
+	// 	but do NOT want to
+	//		- notify coord about status
+	//		- further call replica store checkpoint.
+	if isInvokedByReplica {
+		return checkpoint, nil
+	}
+
+	// If 'this' == main worker, want to instruct replica worker
+	//	to store checkpoint
+	// **NOTE** main worker may NOT have replica
+	if w.Replica != (WorkerNode{}) {
 		err = w.storeCheckpointReplica(checkpoint)
-		if err != nil {
-			util.CheckErr(
-				err,
-				"storeCheckpoint: worker %v could not sync checkpoint with"+
-					" replica\n", w.config.WorkerAddr,
-			)
-		}
+		util.CheckErr(
+			err,
+			"storeCheckpoint: worker %v could not sync checkpoint with"+
+				" replica\n", w.config.WorkerAddr,
+		)
 	}
 
 	// notify coord about the latest checkpoint saved
@@ -189,6 +207,7 @@ func (w *Worker) storeCheckpoint(
 			" UpdateCheckpoint",
 		w.config.WorkerAddr,
 	)
+	log.Printf("!!!!!!! worker %v called update cp with superstep %v\n", w.LogicalId, checkpoint.SuperStepNumber)
 
 	return checkpoint, nil
 }

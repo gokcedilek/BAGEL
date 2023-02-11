@@ -187,6 +187,8 @@ func (w *Worker) StartQuery(
 		err, "StartQuery: Worker %v could not setup checkpoints db\n",
 		w.config.WorkerId,
 	)
+	err = w.resetCheckpoints()
+	util.CheckErr(err, "StartQuery: Worker %v could not clear checkpoints\n", w.config.WorkerId)
 
 	// workers need to connect to the db and initialize state
 	log.Printf(
@@ -452,16 +454,15 @@ func (w *Worker) TransferCheckpointToReplica(superstep uint64, response *uint64)
 func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
-	log.Printf("ComputeVertices: worker: %v, args: %v\n", w, args)
-
+	log.Printf("ComputeVertices: Beginning Superstep %v for worker: %v, args: %v\n", args.SuperStepNum, w, args)
 	//start := time.Now()
 
 	// save the checkpoint before running superstep S
 	if args.IsCheckpoint && !args.IsRestart {
 		w.workerMutex.Lock()
 		checkpoint := w.checkpoint(args.SuperStepNum)
-		_, err := w.storeCheckpoint(checkpoint, true)
-		//w.Replica.store
+		log.Printf("Calling store checkpoint")
+		_, err := w.storeCheckpoint(checkpoint, false)
 		util.CheckErr(
 			err,
 			"ComputeVertices: worker %v failed to checkpoint # %v\n",
@@ -585,8 +586,14 @@ func (w *Worker) ComputeVertices(
 	return nil
 }
 
+/*
+	TODO: rename this function
+	Replica's RPC function. Invoked by Main Worker
+*/
 func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
-	_, err := w.storeCheckpoint(checkpoint, true)
+	err := w.initializeCheckpoints()
+	util.CheckErr(err, "Failed to initialize checkpoint for replica")
+	_, err = w.storeCheckpoint(checkpoint, true)
 	util.CheckErr(err, "Failed to store checkpoint for replica")
 	return nil
 }
