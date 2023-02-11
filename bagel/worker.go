@@ -37,23 +37,21 @@ type WorkerConfig struct {
 }
 
 type Worker struct {
-	// Worker state may go here
 	config          WorkerConfig
 	SuperStep       *SuperStep
 	NextSuperStep   *SuperStep
 	Query           Query
 	Vertices        map[uint64]*Vertex
 	workerDirectory WorkerDirectory
-	// workerCallBook  WorkerPool
-	workerCallBook WorkerCallBook
-	Replica        WorkerNode
-	ReplicaClient  *rpc.Client
-	LogicalId      uint32
-	NumWorkers     uint32
-	QueryVertex    uint64
-	workerMutex    sync.Mutex
-	logFile        *os.File
-	logger         *log.Logger
+	workerCallBook  WorkerCallBook
+	Replica         WorkerNode
+	ReplicaClient   *rpc.Client
+	LogicalId       uint32
+	NumWorkers      uint32
+	QueryVertex     uint64
+	workerMutex     sync.Mutex
+	logFile         *os.File
+	logger          *log.Logger
 }
 
 type SuperStep struct {
@@ -118,7 +116,7 @@ func (w *Worker) retrieveVertices(
 	collection := mongodb.GetCollection(client, tableName)
 
 	vertices, err := mongodb.GetPartitionForWorkerX(
-		collection, int(numWorkers),int(w.LogicalId),
+		collection, int(numWorkers), int(w.LogicalId),
 	)
 
 	log.Printf(
@@ -221,21 +219,21 @@ func (w *Worker) StartQuery(
 		var replicaResult interface{}
 		w.ReplicaClient.Call("Worker.StartQuery", startSuperStep, &replicaResult)
 	}
-  
-  /*
-	// set worker vertices in reply
-	// reply.WorkerLogicalId = w.LogicalId
-	reply.WorkerLogicalId = w.config.WorkerId
-	vertexIds := make([]uint64, 0, len(w.Vertices))
-	for k, _ := range w.Vertices {
-		vertexIds = append(vertexIds, k)
-	}
-	reply.Vertices = vertexIds
-	log.Printf(
-		"!!!!Worker %v sending vertices: %v\n", reply.WorkerLogicalId,
-		reply.Vertices,
-	)
-  */
+
+	/*
+		// set worker vertices in reply
+		// reply.WorkerLogicalId = w.LogicalId
+		reply.WorkerLogicalId = w.config.WorkerId
+		vertexIds := make([]uint64, 0, len(w.Vertices))
+		for k, _ := range w.Vertices {
+			vertexIds = append(vertexIds, k)
+		}
+		reply.Vertices = vertexIds
+		log.Printf(
+			"!!!!Worker %v sending vertices: %v\n", reply.WorkerLogicalId,
+			reply.Vertices,
+		)
+	*/
 
 	return nil
 }
