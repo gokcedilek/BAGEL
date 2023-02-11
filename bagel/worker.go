@@ -255,7 +255,6 @@ func (w *Worker) HandleFailover(
 
 /*
 	UpdateReplica - RPC call from Coord to replica that is being promoted;
-		(optional) - promoted replica  assigns its own replica.
 */
 func (w *Worker) UpdateReplica(
 	req PromotedWorker, reply *PromotedWorker,
@@ -438,6 +437,15 @@ func (w *Worker) EndQuery(req EndQuery, reply *EndQuery) error {
 	w.logFile.Close()
 
 	*reply = req
+	return nil
+}
+
+func (w *Worker) TransferCheckpointToReplica(superstep uint64, response *uint64) error {
+	checkpoint, err := w.retrieveCheckpoint(superstep)
+	if err != nil {
+		return err
+	}
+	w.storeCheckpointReplica(checkpoint)
 	return nil
 }
 
