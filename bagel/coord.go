@@ -99,10 +99,10 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	log.Printf("StartQuery: sending query: %v\n", coordQuery)
 
 	startSuperStep := StartSuperStep{
-		NumWorkers:            uint8(len(c.queryWorkers)),
-		WorkerDirectory:       c.GetWorkerDirectory(),
-		Query:                 coordQuery,
-		HasReplicaInitialized: false,
+		NumWorkers:      uint8(len(c.queryWorkers)),
+		WorkerDirectory: c.GetWorkerDirectory(),
+		Query:           coordQuery,
+		IsReplica:       false,
 	}
 
 	numWorkers := len(c.queryWorkers)
@@ -545,11 +545,11 @@ func (c *Coord) initReplicaCheckpoints(replica WorkerNode, logicalId uint32) {
 		defer replicaClient.Close()
 
 		startSuperStep := StartSuperStep{
-			NumWorkers:            uint8(len(c.queryWorkers)),
-			WorkerDirectory:       c.GetWorkerDirectory(),
-			WorkerLogicalId:       logicalId,
-			HasReplicaInitialized: true,
-			Query:                 c.query,
+			NumWorkers:      uint8(len(c.queryWorkers)),
+			WorkerDirectory: c.GetWorkerDirectory(),
+			WorkerLogicalId: logicalId,
+			IsReplica:       true,
+			Query:           c.query,
 		}
 
 		var superStepReply StartSuperStep
@@ -557,7 +557,7 @@ func (c *Coord) initReplicaCheckpoints(replica WorkerNode, logicalId uint32) {
 	} else {
 		mainWorkerClient := c.queryWorkersCallbook[logicalId]
 		var unused uint64
-		mainWorkerClient.Call("Worker.TransferCheckpointToReplica", c.lastCheckpointNumber, &unused)
+		mainWorkerClient.Call("Worker.TransferCheckpointToReplica,", c.lastCheckpointNumber, &unused)
 	}
 }
 
@@ -1148,8 +1148,7 @@ func (c *Coord) Start(
 	c.clientAPIListenAddr = clientAPIListenAddr
 	c.workerAPIListenAddr = workerAPIListenAddr
 	c.lostMsgsThresh = lostMsgsThresh
-	//c.checkpointFrequency = checkpointSteps
-	c.checkpointFrequency = 1
+	c.checkpointFrequency = checkpointSteps
 
 	err := rpc.Register(c)
 	log.Printf("error: %v\n", err)

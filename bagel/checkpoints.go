@@ -100,6 +100,32 @@ func (w *Worker) checkpoint(superStepNum uint64) Checkpoint {
 }
 
 /*
+	Main Worker's RPC function.
+*/
+func (w *Worker) TransferCheckpointToReplica(superstep uint64, response *uint64) error {
+	checkpoint, err := w.retrieveCheckpoint(superstep)
+	log.Printf("Worker %v transfering checkpoint. Checkpoint (SS#: %v):\n\t%v", superstep, w.LogicalId, checkpoint)
+	if err != nil {
+		return err
+	}
+	err = w.storeCheckpointReplica(checkpoint)
+	return err
+}
+
+/*
+	TODO: rename this function
+	Replica's RPC function. Invoked by Main Worker
+*/
+func (w *Worker) ReceiveCheckpointOnReplica(checkpoint Checkpoint, res *Checkpoint) error {
+	log.Printf("Worker %v is replica: %v received RPC call to checkpoint. %v", w.LogicalId, w.Replica, checkpoint)
+	err := w.initializeCheckpoints()
+	util.CheckErr(err, "Failed to initialize checkpoint for replica")
+	_, err = w.storeCheckpoint(checkpoint, true)
+	util.CheckErr(err, "Failed to store checkpoint for replica")
+	return nil
+}
+
+/*
 	Invoked by main worker
 */
 func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
@@ -110,7 +136,7 @@ func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
 	}
 
 	var response Checkpoint
-	err := w.ReplicaClient.Call("Worker.StoreCheckpointOnReplica", checkpoint, &response)
+	err := w.ReplicaClient.Call("Worker.ReceiveCheckpointOnReplica", checkpoint, &response)
 	util.CheckErr(
 		err, "Store Checkpoint On Replica: Worker %v could not sync with replica: %v\n",
 		w.LogicalId, err,
@@ -214,7 +240,7 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	db, err := w.getConnection()
 	util.CheckErr(err, "Retrieve Checkpoint - failed to establish connection with db")
 	defer db.Close()
-	
+
 	res := db.QueryRow(
 		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?",
 		superStepNumber,

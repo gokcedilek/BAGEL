@@ -173,14 +173,22 @@ func (w *Worker) StartQuery(
 	w.Query = startSuperStep.Query
 	w.LogicalId = startSuperStep.WorkerLogicalId
 
-	// todo what if there is no replica?
-	if !startSuperStep.HasReplicaInitialized && w.Replica != (WorkerNode{}) {
-		startSuperStep.HasReplicaInitialized = true
+	if !startSuperStep.IsReplica && w.Replica != (WorkerNode{}) {
 		replicaClient, err := util.DialRPC(startSuperStep.ReplicaAddr)
 		util.CheckErr(err, "StartQuery: Worker %v could not dial replica\n", w.LogicalId)
 		w.ReplicaClient = replicaClient
 		var replicaResult StartSuperStepResult
-		err = w.ReplicaClient.Call("Worker.StartQuery", startSuperStep, &replicaResult)
+
+		initSuperStepForReplica := StartSuperStep{
+			NumWorkers:      startSuperStep.NumWorkers,
+			WorkerDirectory: startSuperStep.WorkerDirectory,
+			WorkerLogicalId: startSuperStep.WorkerLogicalId,
+			ReplicaAddr:     "",
+			Query:           startSuperStep.Query,
+			IsReplica:       true,
+		}
+
+		err = w.ReplicaClient.Call("Worker.StartQuery", initSuperStepForReplica, &replicaResult)
 		util.CheckErr(err, "Start Query - failed to dial replica worker.\n\tError: %v", err)
 	}
 
@@ -439,16 +447,6 @@ func (w *Worker) EndQuery(req EndQuery, reply *EndQuery) error {
 	return nil
 }
 
-func (w *Worker) TransferCheckpointToReplica(superstep uint64, response *uint64) error {
-	checkpoint, err := w.retrieveCheckpoint(superstep)
-	log.Printf("Worker %v transfering checkpoint. Checkpoint:\n\t%v", w.LogicalId, checkpoint)
-	if err != nil {
-		return err
-	}
-	w.storeCheckpointReplica(checkpoint)
-	return nil
-}
-
 func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
@@ -581,19 +579,6 @@ func (w *Worker) ComputeVertices(
 	//	duration.Seconds(),
 	//)
 
-	return nil
-}
-
-/*
-	TODO: rename this function
-	Replica's RPC function. Invoked by Main Worker
-*/
-func (w *Worker) StoreCheckpointOnReplica(checkpoint Checkpoint, res *Checkpoint) error {
-	log.Printf("Worker %v is replica: %v received RPC call to checkpoint. %v", w.LogicalId, w.Replica, checkpoint)
-	err := w.initializeCheckpoints()
-	util.CheckErr(err, "Failed to initialize checkpoint for replica")
-	_, err = w.storeCheckpoint(checkpoint, true)
-	util.CheckErr(err, "Failed to store checkpoint for replica")
 	return nil
 }
 
