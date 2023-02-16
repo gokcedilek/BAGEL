@@ -433,6 +433,9 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				workerNode.WorkerConfigId, logicalId,
 				c.queryReplicas[logicalId].IsReplica,
 			)
+
+			// tell main worker about its replica
+			c.assignReplica(c.queryReplicas[logicalId], logicalId)
 		}
 
 		// assign the same logical id for main & replica
@@ -497,9 +500,10 @@ func (c *Coord) assignReplica(replica WorkerNode, logicalId uint32) {
 		Worker:    replica,
 	}
 	var result PromotedWorker
-	c.queryWorkersCallbook[logicalId].Call(
+	err := c.queryWorkersCallbook[logicalId].Call(
 		"Worker.UpdateReplica", replicaWorker, &result,
 	)
+	util.CheckErr(err, "FATAL - failed to assign replica")
 }
 
 func (c *Coord) broadcastNewMainWorker(newWorkerLogicalId uint32) {
@@ -981,7 +985,6 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		w.WorkerConfigId, c.workers,
 	)
 
-	// return nil for no errors
 	return nil
 }
 
@@ -1145,7 +1148,8 @@ func (c *Coord) Start(
 	c.clientAPIListenAddr = clientAPIListenAddr
 	c.workerAPIListenAddr = workerAPIListenAddr
 	c.lostMsgsThresh = lostMsgsThresh
-	c.checkpointFrequency = checkpointSteps
+	//c.checkpointFrequency = checkpointSteps
+	c.checkpointFrequency = 1
 
 	err := rpc.Register(c)
 	log.Printf("error: %v\n", err)

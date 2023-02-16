@@ -65,7 +65,6 @@ type BatchedMessages struct {
 }
 
 func NewWorker(config WorkerConfig) *Worker {
-
 	config.LocalWorkerListAddr = util.IPEmptyPortOnly(config.WorkerListenAddr)
 	config.LocalWorkerAddr = util.IPEmptyPortOnly(config.WorkerAddr)
 	config.LocalFCheckAckLocalAddress = util.IPEmptyPortOnly(config.FCheckAckLocalAddress)
@@ -168,17 +167,21 @@ func (w *Worker) retrieveVertices(
 func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *StartSuperStepResult,
 ) error {
-
-	log.Printf("StartQuery: startSuperStep: %v, isReplica: %v\n", startSuperStep, startSuperStep.HasReplicaInitialized)
+	log.Printf("StartQuery - Beginning start query")
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
 	w.LogicalId = startSuperStep.WorkerLogicalId
 
-	if !startSuperStep.HasReplicaInitialized {
+	// todo what if there is no replica?
+	if !startSuperStep.HasReplicaInitialized && w.Replica != (WorkerNode{}) {
+		startSuperStep.HasReplicaInitialized = true
 		replicaClient, err := util.DialRPC(startSuperStep.ReplicaAddr)
 		util.CheckErr(err, "StartQuery: Worker %v could not dial replica\n", w.LogicalId)
 		w.ReplicaClient = replicaClient
+		var replicaResult StartSuperStepResult
+		err = w.ReplicaClient.Call("Worker.StartQuery", startSuperStep, &replicaResult)
+		util.CheckErr(err, "Start Query - failed to dial replica worker.\n\tError: %v", err)
 	}
 
 	// setup local checkpoints storage for the worker
@@ -215,12 +218,6 @@ func (w *Worker) StartQuery(
 			w.config.WorkerId,
 		), log.LstdFlags,
 	)
-
-	if !startSuperStep.HasReplicaInitialized {
-		startSuperStep.HasReplicaInitialized = true
-		var replicaResult interface{}
-		w.ReplicaClient.Call("Worker.StartQuery", startSuperStep, &replicaResult)
-	}
 
 	/*
 		// set worker vertices in reply
@@ -261,7 +258,7 @@ func (w *Worker) HandleFailover(
 func (w *Worker) UpdateReplica(
 	req PromotedWorker, reply *PromotedWorker,
 ) error {
-	// todo test
+	log.Printf("Worker ID (config) = %v updating replica %v", w.config.WorkerId, req.Worker)
 	w.Replica = WorkerNode{}
 
 	if req.Worker != (WorkerNode{}) {
@@ -284,7 +281,7 @@ func (w *Worker) RevertToLastCheckpoint(
 		req.SuperStepNumber,
 	)
 
-	// if failed before saving a checkpoint, revert back to initial state
+	// if failed before saving a checkpoint, revert to initial state
 	if req.SuperStepNumber == 0 {
 		log.Printf(
 			"RevertToLastCheckpoint: worker %v reverting back to"+
@@ -444,6 +441,7 @@ func (w *Worker) EndQuery(req EndQuery, reply *EndQuery) error {
 
 func (w *Worker) TransferCheckpointToReplica(superstep uint64, response *uint64) error {
 	checkpoint, err := w.retrieveCheckpoint(superstep)
+	log.Printf("Worker %v transfering checkpoint. Checkpoint:\n\t%v", w.LogicalId, checkpoint)
 	if err != nil {
 		return err
 	}
@@ -590,7 +588,8 @@ func (w *Worker) ComputeVertices(
 	TODO: rename this function
 	Replica's RPC function. Invoked by Main Worker
 */
-func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
+func (w *Worker) StoreCheckpointOnReplica(checkpoint Checkpoint, res *Checkpoint) error {
+	log.Printf("Worker %v is replica: %v received RPC call to checkpoint. %v", w.LogicalId, w.Replica, checkpoint)
 	err := w.initializeCheckpoints()
 	util.CheckErr(err, "Failed to initialize checkpoint for replica")
 	_, err = w.storeCheckpoint(checkpoint, true)

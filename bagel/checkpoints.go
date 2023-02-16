@@ -105,18 +105,14 @@ func (w *Worker) checkpoint(superStepNum uint64) Checkpoint {
 func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
 	if w.ReplicaClient == nil {
 		client, err := util.DialRPC(w.Replica.WorkerListenAddr)
-
-		if err != nil {
-			log.Fatalf("worker could not connect to replica\n")
-		}
-
+		util.CheckErr(err, "Store CP on Replica - could not connect to replica.\n\tError: %v", err)
 		w.ReplicaClient = client
 	}
 
 	var response Checkpoint
-	err := w.ReplicaClient.Call("Worker.SyncReplica", checkpoint, &response)
+	err := w.ReplicaClient.Call("Worker.StoreCheckpointOnReplica", checkpoint, &response)
 	util.CheckErr(
-		err, "Sync Replica: Worker %v could not sync with replica: %v\n",
+		err, "Store Checkpoint On Replica: Worker %v could not sync with replica: %v\n",
 		w.LogicalId, err,
 	)
 	return nil
@@ -216,11 +212,9 @@ func (w *Worker) retrieveCheckpoint(superStepNumber uint64) (
 	Checkpoint, error,
 ) {
 	db, err := w.getConnection()
-	if err != nil {
-		os.Exit(1)
-	}
+	util.CheckErr(err, "Retrieve Checkpoint - failed to establish connection with db")
 	defer db.Close()
-
+	
 	res := db.QueryRow(
 		"SELECT * FROM checkpoints WHERE lastCheckpointNumber=?",
 		superStepNumber,
