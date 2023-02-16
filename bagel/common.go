@@ -21,12 +21,12 @@ type WorkerNode struct {
 }
 
 type StartSuperStep struct {
-	NumWorkers            uint8
-	WorkerDirectory       WorkerDirectory
-	WorkerLogicalId       uint32
-	ReplicaAddr           string
-	Query                 Query
-	HasReplicaInitialized bool
+	NumWorkers      uint8
+	WorkerDirectory WorkerDirectory
+	WorkerLogicalId uint32
+	ReplicaAddr     string
+	Query           Query
+	IsReplica       bool
 }
 
 type StartSuperStepResult struct {
@@ -99,18 +99,9 @@ type WorkerDirectory map[uint32]string
 // WorkerCallBook maps worker ids to rpc clients (connections)
 type WorkerCallBook map[uint32]*rpc.Client
 
-//type FailoverQueryWorker struct {
-//	main    *rpc.Client
-//	replica *rpc.Client
-//}
-
 type PromotedWorker struct {
 	LogicalId uint32
 	Worker    WorkerNode
 }
 
-//type FailoverWorkerCallBook map[uint32]FailoverQueryWorker
-
 type WorkerPool map[uint32]WorkerNode
-
-//type

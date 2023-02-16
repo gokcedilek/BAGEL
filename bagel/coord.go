@@ -99,10 +99,10 @@ func (c *Coord) StartQuery(ctx context.Context, q *coordgRPC.Query) (
 	log.Printf("StartQuery: sending query: %v\n", coordQuery)
 
 	startSuperStep := StartSuperStep{
-		NumWorkers:            uint8(len(c.queryWorkers)),
-		WorkerDirectory:       c.GetWorkerDirectory(),
-		Query:                 coordQuery,
-		HasReplicaInitialized: false,
+		NumWorkers:      uint8(len(c.queryWorkers)),
+		WorkerDirectory: c.GetWorkerDirectory(),
+		Query:           coordQuery,
+		IsReplica:       false,
 	}
 
 	numWorkers := len(c.queryWorkers)
@@ -433,6 +433,9 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 				workerNode.WorkerConfigId, logicalId,
 				c.queryReplicas[logicalId].IsReplica,
 			)
+
+			// tell main worker about its replica
+			c.assignReplica(c.queryReplicas[logicalId], logicalId)
 		}
 
 		// assign the same logical id for main & replica
@@ -454,69 +457,108 @@ func (c *Coord) handleFailover(logicalId uint32) {
 		c.queryWorkers,
 		c.queryReplicas, logicalId,
 	)
-
-	// update query workers
-	mainWorker := c.queryReplicas[logicalId]
-	c.queryWorkers[logicalId] = mainWorker
-	mainWorkerClient, err := util.DialRPC(mainWorker.WorkerListenAddr)
-	util.CheckErr(err, "handleFailover - failed to dial new main worker node\n")
-	c.queryWorkersCallbook[logicalId] = mainWorkerClient
-
-	// update query replicas
-	delete(c.queryReplicas, logicalId)
-
+	log.Printf("HandleFailOver - last checkpoint # %v", c.lastCheckpointNumber)
+	c.promoteReplicaWorkerToMain(logicalId)
+	c.broadcastNewMainWorker(logicalId)
+	c.promoteWorkerToReplica(logicalId)
 	log.Printf(
 		"AFTER HANDLEFAILOVER query w: %v, query r: %v, "+
 			"logical id: %v\n",
 		c.queryWorkers,
 		c.queryReplicas, logicalId,
 	)
+}
 
+func (c *Coord) promoteReplicaWorkerToMain(logicalId uint32) {
+	mainWorker := c.queryReplicas[logicalId]
+	mainWorker.IsReplica = false
+	c.queryWorkers[logicalId] = mainWorker
+	mainClient, err := util.DialRPC(mainWorker.WorkerListenAddr)
+	util.CheckErr(err, "handleFailover - failed to dial new main worker node\n")
+	c.queryWorkersCallbook[logicalId] = mainClient
+	delete(c.queryReplicas, logicalId)
+	log.Printf("After - query w: %v, query r: %v\n", c.queryWorkers, c.queryReplicas)
+}
+
+func (c *Coord) promoteWorkerToReplica(logicalId uint32) {
 	newReplica := c.GetIdleWorker()
 	if newReplica != (WorkerNode{}) {
-		newReplica.WorkerLogicalId = logicalId
-		c.queryReplicas[logicalId] = newReplica
-		// todo discuss w/ Gokce
-		// here the replica needs to be updated to store the most recent checkpoint.
-		// otherwise, if the main worker fails before the next checkpoint we will fail.
-	} else {
-		// logging
-		log.Printf("handleFailover: Unable to assign replicas - not enough workers\n")
+		c.initReplica(&newReplica, logicalId)
+		c.assignReplica(newReplica, logicalId)
+		c.initReplicaCheckpoints(newReplica, logicalId)
 	}
+}
 
-	log.Printf("Coord - updated workers: %v\n", c.queryWorkers)
-	log.Printf("Coord - updated replicas: %v\n", c.queryReplicas)
+func (c *Coord) initReplica(replica *WorkerNode, logicalId uint32) {
+	replica.IsReplica = true
+	replica.WorkerLogicalId = logicalId
+}
 
-	// broadcast main worker to other workers
-	c.workerDoneFailover = make(chan *rpc.Call, len(c.queryWorkers))
-	for wLogicalId, workerNode := range c.queryWorkers {
-		if wLogicalId != logicalId {
+func (c *Coord) assignReplica(replica WorkerNode, logicalId uint32) {
+	replicaWorker := PromotedWorker{
+		LogicalId: logicalId,
+		Worker:    replica,
+	}
+	var result PromotedWorker
+	err := c.queryWorkersCallbook[logicalId].Call(
+		"Worker.UpdateReplica", replicaWorker, &result,
+	)
+	util.CheckErr(err, "FATAL - failed to assign replica")
+}
+
+func (c *Coord) broadcastNewMainWorker(newWorkerLogicalId uint32) {
+	newMainWorker := c.queryWorkers[newWorkerLogicalId]
+	waitForWorkerCount := len(c.queryWorkers) - 1
+	c.workerDoneFailover = make(chan *rpc.Call, waitForWorkerCount)
+
+	for wLogicalId, _ := range c.queryWorkers {
+		if wLogicalId != newWorkerLogicalId {
 			log.Printf(
 				"Coord: handleFailover: calling"+
 					" HandleFailover on worker %v\n", wLogicalId,
 			)
 			promotedWorker := PromotedWorker{
-				LogicalId: logicalId,
-				Worker:    mainWorker,
+				LogicalId: newWorkerLogicalId,
+				Worker:    newMainWorker,
 			}
 			var result PromotedWorker
 			c.queryWorkersCallbook[wLogicalId].Go(
 				"Worker.HandleFailover", promotedWorker, &result,
 				c.workerDoneFailover,
 			)
-
-		} else {
-			replicaWorker := PromotedWorker{
-				LogicalId: logicalId,
-				Worker:    newReplica,
-			}
-			var result PromotedWorker
-			c.queryWorkersCallbook[workerNode.WorkerLogicalId].Call(
-				"Worker.UpdateReplica", replicaWorker, &result,
-			)
 		}
 	}
-	go c.blockForWorkerUpdate(len(c.queryWorkers)-1, c.workerDoneFailover)
+
+	go c.blockForWorkerUpdate(waitForWorkerCount, c.workerDoneFailover)
+}
+
+func (c *Coord) initReplicaCheckpoints(replica WorkerNode, logicalId uint32) {
+	log.Printf("InitReplica - initializing replica (logical id = %v)", logicalId)
+	c.queryReplicas[logicalId] = replica
+
+	if c.lastCheckpointNumber < c.checkpointFrequency {
+		replicaClient, err := util.DialRPC(replica.WorkerListenAddr)
+		if err != nil {
+			log.Printf("HandleFailover - failed to contact idle replica worker")
+		}
+
+		defer replicaClient.Close()
+
+		startSuperStep := StartSuperStep{
+			NumWorkers:      uint8(len(c.queryWorkers)),
+			WorkerDirectory: c.GetWorkerDirectory(),
+			WorkerLogicalId: logicalId,
+			IsReplica:       true,
+			Query:           c.query,
+		}
+
+		var superStepReply StartSuperStep
+		replicaClient.Call("Worker.StartQuery", startSuperStep, &superStepReply)
+	} else {
+		mainWorkerClient := c.queryWorkersCallbook[logicalId]
+		var unused uint64
+		mainWorkerClient.Call("Worker.TransferCheckpointToReplica,", c.lastCheckpointNumber, &unused)
+	}
 }
 
 func (c *Coord) IsActiveWorker(w WorkerNode) bool {
@@ -789,7 +831,6 @@ func (c *Coord) endQuery(params EndQuery) {
 func (c *Coord) Compute(logger *log.Logger) (interface{}, error) {
 	// keep sending messages to workers, until everything has completed
 	// need to make it concurrent; so put in separate channel
-
 	numWorkers := len(c.queryWorkers)
 
 	for {
@@ -944,12 +985,10 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 		w.WorkerConfigId, c.workers,
 	)
 
-	// return nil for no errors
 	return nil
 }
 
 func listenWorkers(workerAPIListenAddr string) {
-
 	wlisten, err := net.Listen("tcp", workerAPIListenAddr)
 	if err != nil {
 		log.Printf("listenWorkers: Error listening: %v\n", err)
@@ -1022,31 +1061,13 @@ func (c *Coord) monitor(w WorkerNode) {
 					log.Printf(
 						"monitor: REPLICA WORKER failed\n",
 					)
-					newReplica := c.GetIdleWorker()
-
-					if newReplica == (WorkerNode{}) {
-						log.Printf(
-							"monitor: no idle workers found - no" +
-								" actions have been taken\n",
-						)
-					} else {
-						replicaWorker := PromotedWorker{
-							LogicalId: failedWorker.WorkerLogicalId,
-							Worker:    newReplica,
-						}
-						var result PromotedWorker
-						c.queryWorkersCallbook[failedWorker.WorkerLogicalId].Call(
-							"Worker.UpdateReplica", replicaWorker, &result,
-						)
-					}
+					c.promoteWorkerToReplica(failedWorker.WorkerLogicalId)
 				} else {
 					log.Printf(
-						"monitor: IDLE WORKER failed\n",
-					)
+						"monitor: idle worker has failed.")
 				}
 
 				c.restartSuperStepCh <- failedWorker.WorkerLogicalId
-
 				return
 			}
 		}

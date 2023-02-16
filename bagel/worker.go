@@ -37,23 +37,21 @@ type WorkerConfig struct {
 }
 
 type Worker struct {
-	// Worker state may go here
 	config          WorkerConfig
 	SuperStep       *SuperStep
 	NextSuperStep   *SuperStep
 	Query           Query
 	Vertices        map[uint64]*Vertex
 	workerDirectory WorkerDirectory
-	// workerCallBook  WorkerPool
-	workerCallBook WorkerCallBook
-	Replica        WorkerNode
-	ReplicaClient  *rpc.Client
-	LogicalId      uint32
-	NumWorkers     uint32
-	QueryVertex    uint64
-	workerMutex    sync.Mutex
-	logFile        *os.File
-	logger         *log.Logger
+	workerCallBook  WorkerCallBook
+	Replica         WorkerNode
+	ReplicaClient   *rpc.Client
+	LogicalId       uint32
+	NumWorkers      uint32
+	QueryVertex     uint64
+	workerMutex     sync.Mutex
+	logFile         *os.File
+	logger          *log.Logger
 }
 
 type SuperStep struct {
@@ -67,7 +65,6 @@ type BatchedMessages struct {
 }
 
 func NewWorker(config WorkerConfig) *Worker {
-
 	config.LocalWorkerListAddr = util.IPEmptyPortOnly(config.WorkerListenAddr)
 	config.LocalWorkerAddr = util.IPEmptyPortOnly(config.WorkerAddr)
 	config.LocalFCheckAckLocalAddress = util.IPEmptyPortOnly(config.FCheckAckLocalAddress)
@@ -118,7 +115,7 @@ func (w *Worker) retrieveVertices(
 	collection := mongodb.GetCollection(client, tableName)
 
 	vertices, err := mongodb.GetPartitionForWorkerX(
-		collection, int(numWorkers),int(w.LogicalId),
+		collection, int(numWorkers), int(w.LogicalId),
 	)
 
 	log.Printf(
@@ -170,17 +167,29 @@ func (w *Worker) retrieveVertices(
 func (w *Worker) StartQuery(
 	startSuperStep StartSuperStep, reply *StartSuperStepResult,
 ) error {
-
-	log.Printf("StartQuery: startSuperStep: %v, isReplica: %v\n", startSuperStep, startSuperStep.HasReplicaInitialized)
+	log.Printf("StartQuery - Beginning start query")
 	w.NumWorkers = uint32(startSuperStep.NumWorkers)
 	w.workerDirectory = startSuperStep.WorkerDirectory
 	w.Query = startSuperStep.Query
 	w.LogicalId = startSuperStep.WorkerLogicalId
 
-	if !startSuperStep.HasReplicaInitialized {
+	if !startSuperStep.IsReplica && w.Replica != (WorkerNode{}) {
 		replicaClient, err := util.DialRPC(startSuperStep.ReplicaAddr)
 		util.CheckErr(err, "StartQuery: Worker %v could not dial replica\n", w.LogicalId)
 		w.ReplicaClient = replicaClient
+		var replicaResult StartSuperStepResult
+
+		initSuperStepForReplica := StartSuperStep{
+			NumWorkers:      startSuperStep.NumWorkers,
+			WorkerDirectory: startSuperStep.WorkerDirectory,
+			WorkerLogicalId: startSuperStep.WorkerLogicalId,
+			ReplicaAddr:     "",
+			Query:           startSuperStep.Query,
+			IsReplica:       true,
+		}
+
+		err = w.ReplicaClient.Call("Worker.StartQuery", initSuperStepForReplica, &replicaResult)
+		util.CheckErr(err, "Start Query - failed to dial replica worker.\n\tError: %v", err)
 	}
 
 	// setup local checkpoints storage for the worker
@@ -189,6 +198,8 @@ func (w *Worker) StartQuery(
 		err, "StartQuery: Worker %v could not setup checkpoints db\n",
 		w.config.WorkerId,
 	)
+	err = w.resetCheckpoints()
+	util.CheckErr(err, "StartQuery: Worker %v could not clear checkpoints\n", w.config.WorkerId)
 
 	// workers need to connect to the db and initialize state
 	log.Printf(
@@ -216,26 +227,20 @@ func (w *Worker) StartQuery(
 		), log.LstdFlags,
 	)
 
-	if !startSuperStep.HasReplicaInitialized {
-		startSuperStep.HasReplicaInitialized = true
-		var replicaResult interface{}
-		w.ReplicaClient.Call("Worker.StartQuery", startSuperStep, &replicaResult)
-	}
-  
-  /*
-	// set worker vertices in reply
-	// reply.WorkerLogicalId = w.LogicalId
-	reply.WorkerLogicalId = w.config.WorkerId
-	vertexIds := make([]uint64, 0, len(w.Vertices))
-	for k, _ := range w.Vertices {
-		vertexIds = append(vertexIds, k)
-	}
-	reply.Vertices = vertexIds
-	log.Printf(
-		"!!!!Worker %v sending vertices: %v\n", reply.WorkerLogicalId,
-		reply.Vertices,
-	)
-  */
+	/*
+		// set worker vertices in reply
+		// reply.WorkerLogicalId = w.LogicalId
+		reply.WorkerLogicalId = w.config.WorkerId
+		vertexIds := make([]uint64, 0, len(w.Vertices))
+		for k, _ := range w.Vertices {
+			vertexIds = append(vertexIds, k)
+		}
+		reply.Vertices = vertexIds
+		log.Printf(
+			"!!!!Worker %v sending vertices: %v\n", reply.WorkerLogicalId,
+			reply.Vertices,
+		)
+	*/
 
 	return nil
 }
@@ -257,12 +262,11 @@ func (w *Worker) HandleFailover(
 
 /*
 	UpdateReplica - RPC call from Coord to replica that is being promoted;
-		(optional) - promoted replica  assigns its own replica.
 */
 func (w *Worker) UpdateReplica(
 	req PromotedWorker, reply *PromotedWorker,
 ) error {
-	// todo test
+	log.Printf("Worker ID (config) = %v updating replica %v", w.config.WorkerId, req.Worker)
 	w.Replica = WorkerNode{}
 
 	if req.Worker != (WorkerNode{}) {
@@ -285,7 +289,7 @@ func (w *Worker) RevertToLastCheckpoint(
 		req.SuperStepNumber,
 	)
 
-	// if failed before saving a checkpoint, revert back to initial state
+	// if failed before saving a checkpoint, revert to initial state
 	if req.SuperStepNumber == 0 {
 		log.Printf(
 			"RevertToLastCheckpoint: worker %v reverting back to"+
@@ -446,16 +450,15 @@ func (w *Worker) EndQuery(req EndQuery, reply *EndQuery) error {
 func (w *Worker) ComputeVertices(
 	args *ProgressSuperStep, resp *ProgressSuperStepResult,
 ) error {
-	log.Printf("ComputeVertices: worker: %v, args: %v\n", w, args)
-
+	log.Printf("ComputeVertices: Beginning Superstep %v for worker: %v, args: %v\n", args.SuperStepNum, w, args)
 	//start := time.Now()
 
 	// save the checkpoint before running superstep S
 	if args.IsCheckpoint && !args.IsRestart {
 		w.workerMutex.Lock()
 		checkpoint := w.checkpoint(args.SuperStepNum)
-		_, err := w.storeCheckpoint(checkpoint, true)
-		//w.Replica.store
+		log.Printf("Calling store checkpoint")
+		_, err := w.storeCheckpoint(checkpoint, false)
 		util.CheckErr(
 			err,
 			"ComputeVertices: worker %v failed to checkpoint # %v\n",
@@ -576,12 +579,6 @@ func (w *Worker) ComputeVertices(
 	//	duration.Seconds(),
 	//)
 
-	return nil
-}
-
-func (w *Worker) SyncReplica(checkpoint Checkpoint, res *Checkpoint) error {
-	_, err := w.storeCheckpoint(checkpoint, true)
-	util.CheckErr(err, "Failed to store checkpoint for replica")
 	return nil
 }
 
