@@ -229,7 +229,6 @@ func (w *Worker) storeCheckpoint(
 			" UpdateCheckpoint",
 		w.config.WorkerAddr,
 	)
-	log.Printf("!!!!!!! worker %v called update cp with superstep %v\n", w.LogicalId, checkpoint.SuperStepNumber)
 
 	return checkpoint, nil
 }
