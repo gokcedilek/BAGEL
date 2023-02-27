@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+
 	//"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
 )
@@ -374,7 +376,7 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 			"Do not have enough workers to perform query. "+
 				"Worker count: %v, Desired Worker count: %v\n",
 			len(c.workers),
-			workerCount,
+			workerCount*2,
 		)
 	}
 
@@ -1121,8 +1123,42 @@ func (c *Coord) DeleteWorker(context *gin.Context) {
 	context.JSONP(http.StatusOK, gin.H{"workerId": workerId})
 }
 
+func AuthMiddleware() gin.HandlerFunc {
+	log.Println("Coord in auth middleware!")
+	if err := godotenv.Load(".env"); err != nil {
+		log.Printf("error loading env file: %v\n", err)
+	}
+	authToken := os.Getenv("AUTH_KEY")
+	if authToken == "" {
+		log.Fatal("Coord auth middleware AUTH_KEY is missing\n")
+	}
+	log.Printf("Coord auth middleware auth token: %v\n", authToken)
+	return func(context *gin.Context) {
+		bearerToken := context.Request.Header.Get("Authorization")
+		if bearerToken == "" {
+			context.AbortWithStatusJSON(
+				401,
+				gin.H{"error": "Auth token required"},
+			)
+			return
+		}
+		token := strings.Split(bearerToken, " ")[1]
+		log.Printf("Coord auth middleware bearer token: %v\n", token)
+		if token != authToken {
+			context.AbortWithStatusJSON(
+				401,
+				gin.H{"error": "Auth token invalid"},
+			)
+			return
+		}
+		context.Next()
+	}
+
+}
+
 func (c *Coord) listenExternalRequests(externalAPIListenAddr string) {
 	router := gin.Default()
+	router.Use(AuthMiddleware())
 	externalAPI := router.Group("/api")
 	{
 		externalAPI.POST("/worker", c.AddWorker)
