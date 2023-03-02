@@ -460,7 +460,8 @@ func (c *Coord) handleFailover(logicalId uint32) {
 	log.Printf("HandleFailOver - last checkpoint # %v", c.lastCheckpointNumber)
 	c.promoteReplicaWorkerToMain(logicalId)
 	c.broadcastNewMainWorker(logicalId)
-	c.promoteWorkerToReplica(logicalId)
+	c.handleReplicaFailure(logicalId)
+
 	log.Printf(
 		"AFTER HANDLEFAILOVER query w: %v, query r: %v, "+
 			"logical id: %v\n",
@@ -480,13 +481,36 @@ func (c *Coord) promoteReplicaWorkerToMain(logicalId uint32) {
 	log.Printf("After - query w: %v, query r: %v\n", c.queryWorkers, c.queryReplicas)
 }
 
-func (c *Coord) promoteWorkerToReplica(logicalId uint32) {
-	newReplica := c.GetIdleWorker()
-	if newReplica != (WorkerNode{}) {
-		c.initReplica(&newReplica, logicalId)
-		c.assignReplica(newReplica, logicalId)
-		c.initReplicaCheckpoints(newReplica, logicalId)
+func (c *Coord) handleReplicaFailure(logicalId uint32) {
+	if idleWorker := c.GetIdleWorker(); idleWorker != (WorkerNode{}) {
+		c.initReplica(&idleWorker, logicalId)
+		c.promoteWorkerToReplica(&idleWorker)
+	} else {
+		var unusedResponse PromotedWorker
+		err := c.queryWorkersCallbook[logicalId].Call("Worker.UpdateReplica", unusedResponse, &unusedResponse)
+		if err != nil {
+			log.Printf("WARNING - Failed to unassign worker with logical ID = %v replica %v", logicalId, err)
+		}
 	}
+}
+
+func (c *Coord) promoteWorkerToReplicaIfAvailable(logicalId uint32) {
+	if idleWorker := c.GetIdleWorker(); idleWorker != (WorkerNode{}) {
+		c.initReplica(&idleWorker, logicalId)
+		c.promoteWorkerToReplica(&idleWorker)
+	}
+}
+
+func (c *Coord) promoteWorkerToReplica(idleWorker *WorkerNode) {
+	if *idleWorker == (WorkerNode{}) {
+		log.Printf("WARNING - replica candidate was null. No actions have been taken")
+		return
+	}
+
+	logicalId := idleWorker.WorkerLogicalId
+	c.initReplica(idleWorker, logicalId)
+	c.assignReplica(*idleWorker, logicalId)
+	c.initReplicaCheckpoints(*idleWorker, logicalId)
 }
 
 func (c *Coord) initReplica(replica *WorkerNode, logicalId uint32) {
@@ -593,6 +617,7 @@ func (c *Coord) blockForWorkerUpdate(
 	numWorkers int,
 	workerDoneFailover chan *rpc.Call,
 ) {
+	// todo when is blockforworkerupdate called again
 	readyWorkerCounter := 0
 
 	for {
@@ -705,8 +730,8 @@ func (c *Coord) blockWorkersReady(
 				}
 
 				log.Printf(
-					"blockWorkersReady - %v: %d workers ready! %d"+
-						" workers inactive!\n",
+					"blockWorkersReady - %v: %d workers ready %d"+
+						" workers inactive\n",
 					call.ServiceMethod,
 					readyWorkerCounter,
 					inactiveWorkerCounter,
@@ -1046,10 +1071,9 @@ func (c *Coord) monitor(w WorkerNode) {
 			delete(c.workers, w.WorkerConfigId)
 
 			if isRunningQuery {
-				_, isMainWorker := c.queryWorkers[failedWorker.
-					WorkerLogicalId]
-				_, isReplicaWorker := c.queryReplicas[failedWorker.
-					WorkerLogicalId]
+				isMainWorker := c.isWorkerType(failedWorker, true)
+				isReplicaWorker := c.isWorkerType(failedWorker, false)
+
 				log.Printf(
 					"is main: %v, is replica: %v\n", isMainWorker,
 					isReplicaWorker,
@@ -1057,17 +1081,17 @@ func (c *Coord) monitor(w WorkerNode) {
 				if isMainWorker {
 					log.Printf("monitor: MAIN WORKER failed\n")
 					c.handleFailover(failedWorker.WorkerLogicalId)
+					c.restartSuperStepCh <- failedWorker.WorkerLogicalId
 				} else if isReplicaWorker {
 					log.Printf(
 						"monitor: REPLICA WORKER failed\n",
 					)
-					c.promoteWorkerToReplica(failedWorker.WorkerLogicalId)
+					// TODO may need to add another channel to monitor replica failures to wait for failover..
+					c.handleReplicaFailure(failedWorker.WorkerLogicalId)
 				} else {
 					log.Printf(
 						"monitor: idle worker has failed.")
 				}
-
-				c.restartSuperStepCh <- failedWorker.WorkerLogicalId
 				return
 			}
 		}
@@ -1136,6 +1160,19 @@ func (c *Coord) GetIdleWorker() WorkerNode {
 		}
 	}
 	return newReplica
+}
+
+func (c *Coord) isWorkerType(failedWorker WorkerNode, isTypeMainWorker bool) bool {
+	var workerNode WorkerNode
+	var exists bool
+
+	if isTypeMainWorker {
+		workerNode, exists = c.queryWorkers[failedWorker.WorkerLogicalId]
+	} else {
+		workerNode, exists = c.queryReplicas[failedWorker.WorkerLogicalId]
+	}
+
+	return exists && workerNode.WorkerConfigId == failedWorker.WorkerConfigId
 }
 
 // Only returns when network or other unrecoverable errors occur

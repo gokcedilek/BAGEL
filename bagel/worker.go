@@ -266,7 +266,7 @@ func (w *Worker) HandleFailover(
 func (w *Worker) UpdateReplica(
 	req PromotedWorker, reply *PromotedWorker,
 ) error {
-	log.Printf("Worker ID (config) = %v updating replica %v", w.config.WorkerId, req.Worker)
+	log.Printf("Updating worker %v (config ID)'s replica as %v", w.config.WorkerId, req.Worker)
 	w.Replica = WorkerNode{}
 
 	if req.Worker != (WorkerNode{}) {
@@ -631,4 +631,8 @@ func (w *Worker) UpdateWorkerCallBook(newDirectory WorkerDirectory) {
 			delete(w.workerCallBook, workerId)
 		}
 	}
+}
+
+func (w *Worker) IsReplicaAvailable() bool {
+	return w.Replica != WorkerNode{}
 }

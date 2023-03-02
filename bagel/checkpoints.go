@@ -198,7 +198,7 @@ func (w *Worker) storeCheckpoint(
 	// If 'this' == main worker, want to instruct replica worker
 	//	to store checkpoint
 	// **NOTE** main worker may NOT have replica
-	if w.Replica != (WorkerNode{}) {
+	if !w.IsReplicaAvailable() {
 		err = w.storeCheckpointReplica(checkpoint)
 		util.CheckErr(
 			err,
