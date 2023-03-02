@@ -4,21 +4,26 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
+	"os/exec"
 	coordgRPC "project/bagel/proto/coord"
 	"project/database/mongodb"
 	fchecker "project/fcheck"
 	"project/util"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+
 	//"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
 )
@@ -319,6 +324,7 @@ type Coord struct {
 	mx                    sync.Mutex
 	queryProgress         chan queryProgress
 	fetchGraphDone        chan WorkerVertices
+	activeWorkerIds       map[uint32]bool
 }
 
 type superstepDone struct {
@@ -353,6 +359,7 @@ func NewCoord() *Coord {
 		//queryWorkersDirectory:    make(WorkerDirectory),
 		//workersDirectory:         make(WorkerDirectory),
 		superStepNumber:          1,
+		activeWorkerIds:          make(map[uint32]bool),
 		UnimplementedCoordServer: coordgRPC.UnimplementedCoordServer{},
 	}
 }
@@ -369,7 +376,7 @@ func (c *Coord) assignQueryWorkers(workerCount int) {
 			"Do not have enough workers to perform query. "+
 				"Worker count: %v, Desired Worker count: %v\n",
 			len(c.workers),
-			workerCount,
+			workerCount*2,
 		)
 	}
 
@@ -1098,17 +1105,105 @@ func (c *Coord) monitor(w WorkerNode) {
 	}
 }
 
+func (c *Coord) findNextWorkerId() uint32 {
+	if len(c.activeWorkerIds) == 0 {
+		c.activeWorkerIds[0] = true
+		log.Printf("Coord findNextWorkerId: case 1, id: 0\n")
+		return 0
+	} else {
+		minInactiveId := uint32(math.MaxUint8)
+		for id, isActive := range c.activeWorkerIds {
+			if isActive == false && id < minInactiveId {
+				minInactiveId = id
+			}
+		}
+		if minInactiveId == uint32(math.MaxUint8) {
+			minInactiveId = uint32(len(c.activeWorkerIds))
+		}
+		c.activeWorkerIds[minInactiveId] = true
+		log.Printf("Coord findNextWorkerId: case 2, id: %v\n", minInactiveId)
+		return minInactiveId
+	}
+}
+
 func (c *Coord) AddWorker(context *gin.Context) {
-	context.JSON(http.StatusOK, gin.H{"workerId": 1})
+	workerId := c.findNextWorkerId()
+	command := []string{
+		"/bin/sh", strconv.FormatUint(
+			uint64(workerId),
+			10,
+		),
+	}
+	cmd := &exec.Cmd{
+		Path:   "./bagel/worker_start.sh",
+		Args:   command,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}
+	err := cmd.Start()
+	if err != nil {
+		log.Fatalf("error at worker start command: %v with %s\n", cmd, err)
+	}
+	context.JSON(http.StatusOK, gin.H{"workerId": workerId})
 }
 
 func (c *Coord) DeleteWorker(context *gin.Context) {
 	workerId := context.Param("id")
+	command := []string{
+		"/bin/sh", workerId,
+	}
+	cmd := &exec.Cmd{
+		Path:   "./bagel/worker_stop.sh",
+		Args:   command,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}
+	err := cmd.Start()
+	if err != nil {
+		log.Fatalf("error at worker stop command: %v with %s\n", cmd, err)
+	}
+	// set worker id to inactive
+	id, _ := strconv.ParseUint(workerId, 10, 64)
+	c.activeWorkerIds[uint32(id)] = false
 	context.JSONP(http.StatusOK, gin.H{"workerId": workerId})
+}
+
+func AuthMiddleware() gin.HandlerFunc {
+	log.Println("Coord in auth middleware!")
+	if err := godotenv.Load(".env"); err != nil {
+		log.Printf("error loading env file: %v\n", err)
+	}
+	authToken := os.Getenv("AUTH_KEY")
+	if authToken == "" {
+		log.Fatal("Coord auth middleware AUTH_KEY is missing\n")
+	}
+	log.Printf("Coord auth middleware auth token: %v\n", authToken)
+	return func(context *gin.Context) {
+		bearerToken := context.Request.Header.Get("Authorization")
+		if bearerToken == "" {
+			context.AbortWithStatusJSON(
+				401,
+				gin.H{"error": "Auth token required"},
+			)
+			return
+		}
+		token := strings.Split(bearerToken, " ")[1]
+		log.Printf("Coord auth middleware bearer token: %v\n", token)
+		if token != authToken {
+			context.AbortWithStatusJSON(
+				401,
+				gin.H{"error": "Auth token invalid"},
+			)
+			return
+		}
+		context.Next()
+	}
+
 }
 
 func (c *Coord) listenExternalRequests(externalAPIListenAddr string) {
 	router := gin.Default()
+	router.Use(AuthMiddleware())
 	externalAPI := router.Group("/api")
 	{
 		externalAPI.POST("/worker", c.AddWorker)
