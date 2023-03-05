@@ -11,6 +11,7 @@ import (
 	"net/rpc"
 	"os"
 	"os/exec"
+	"os/signal"
 	coordgRPC "project/bagel/proto/coord"
 	"project/database/mongodb"
 	fchecker "project/fcheck"
@@ -19,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +31,7 @@ import (
 )
 
 const (
-	coordProcesses = 3
+	coordProcesses = 4
 )
 
 // this is the start of the query where coord notifies workers to initialize
@@ -1005,11 +1007,19 @@ func (c *Coord) JoinWorker(w WorkerNode, reply *WorkerNode) error {
 
 	go c.monitor(w)
 
-	if _, ok := c.workers[w.WorkerConfigId]; ok {
-		log.Fatalf(
-			"JoinWorker: worker with config id %v already exists in"+
-				" workers!\n", w.WorkerConfigId,
+	// the following scenario will only happen if a worker was terminated but
+	// the failure has not yet been detected by coord. in this case,
+	// we want to wait until coord detects the failure before attempting to
+	// re-join the worker
+	_, exists := c.workers[w.WorkerConfigId]
+	for exists {
+		log.Printf(
+			"Coord - monitor has not detected failure of worker %v\n",
+			w.WorkerConfigId,
 		)
+		time.Sleep(500 * time.Millisecond) // pause the goroutine to give
+		// monitor time to detect the failure
+		_, exists = c.workers[w.WorkerConfigId]
 	}
 	c.workers[w.WorkerConfigId] = w
 	fmt.Printf(
@@ -1126,16 +1136,9 @@ func (c *Coord) findNextWorkerId() uint32 {
 	}
 }
 
-func (c *Coord) AddWorker(context *gin.Context) {
-	workerId := c.findNextWorkerId()
-	command := []string{
-		"/bin/sh", strconv.FormatUint(
-			uint64(workerId),
-			10,
-		),
-	}
+func runWorkerScript(script string, command []string, shouldWait bool) {
 	cmd := &exec.Cmd{
-		Path:   "./bagel/worker_start.sh",
+		Path:   script,
 		Args:   command,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
@@ -1144,24 +1147,37 @@ func (c *Coord) AddWorker(context *gin.Context) {
 	if err != nil {
 		log.Fatalf("error at worker start command: %v with %s\n", cmd, err)
 	}
+	if shouldWait {
+		log.Printf("waiting for process: %v\n", cmd)
+		err = cmd.Wait()
+		if err != nil {
+			log.Fatalf(
+				"error at worker wait command at delete: %v with %s\n", cmd,
+				err,
+			)
+		}
+		log.Printf("done waiting for process: %v\n", cmd)
+	}
+}
+
+func (c *Coord) AddWorker(context *gin.Context) {
+	workerId := c.findNextWorkerId()
+	command := []string{
+		"/bin/sh", strconv.FormatUint(
+			uint64(workerId),
+			10,
+		),
+	}
+	runWorkerScript("./bagel/worker_start.sh", command, false)
 	context.JSON(http.StatusOK, gin.H{"workerId": workerId})
 }
 
-func (c *Coord) DeleteWorker(context *gin.Context) {
+func (c *Coord) RemoveWorker(context *gin.Context) {
 	workerId := context.Param("id")
 	command := []string{
 		"/bin/sh", workerId,
 	}
-	cmd := &exec.Cmd{
-		Path:   "./bagel/worker_stop.sh",
-		Args:   command,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	}
-	err := cmd.Start()
-	if err != nil {
-		log.Fatalf("error at worker stop command: %v with %s\n", cmd, err)
-	}
+	runWorkerScript("./bagel/worker_stop.sh", command, true)
 	// set worker id to inactive
 	id, _ := strconv.ParseUint(workerId, 10, 64)
 	c.activeWorkerIds[uint32(id)] = false
@@ -1207,7 +1223,7 @@ func (c *Coord) listenExternalRequests(externalAPIListenAddr string) {
 	externalAPI := router.Group("/api")
 	{
 		externalAPI.POST("/worker", c.AddWorker)
-		externalAPI.DELETE("/worker/:id", c.DeleteWorker)
+		externalAPI.DELETE("/worker/:id", c.RemoveWorker)
 	}
 	log.Printf(
 		"listenExternalRequests: Listening on %v\n", externalAPIListenAddr,
@@ -1270,6 +1286,27 @@ func (c *Coord) isWorkerType(failedWorker WorkerNode, isTypeMainWorker bool) boo
 	return exists && workerNode.WorkerConfigId == failedWorker.WorkerConfigId
 }
 
+func (c *Coord) waitForSignals() {
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+	<-signalCh
+	log.Printf("COORD GOT KILL SIGNAL!")
+	log.Printf("list of active ids: %v\n", c.activeWorkerIds)
+	for id, isActive := range c.activeWorkerIds {
+		if isActive {
+			command := []string{
+				"/bin/sh", strconv.FormatUint(
+					uint64(id),
+					10,
+				),
+			}
+			runWorkerScript("./bagel/worker_stop.sh", command, true)
+			log.Printf("removed worker %v\n", id)
+		}
+	}
+	os.Exit(0)
+}
+
 // Only returns when network or other unrecoverable errors occur
 func (c *Coord) Start(
 	clientAPIListenAddr string, workerAPIListenAddr string,
@@ -1291,6 +1328,7 @@ func (c *Coord) Start(
 	go listenWorkers(workerAPIListenAddr)
 	go c.listenClientsgRPC(clientAPIListenAddr)
 	go c.listenExternalRequests(externalAPIListenAddr)
+	go c.waitForSignals()
 	wg.Wait()
 
 	// will never return
