@@ -108,8 +108,11 @@ func (w *Worker) TransferCheckpointToReplica(superstep uint64, response *uint64)
 	if err != nil {
 		return err
 	}
-	err = w.storeCheckpointReplica(checkpoint)
-	return err
+	if w.IsReplicaAvailable() {
+		err = w.storeCheckpointReplica(checkpoint)
+		return err
+	}
+	return nil
 }
 
 /*
@@ -129,6 +132,11 @@ func (w *Worker) ReceiveCheckpointOnReplica(checkpoint Checkpoint, res *Checkpoi
 	Invoked by main worker
 */
 func (w *Worker) storeCheckpointReplica(checkpoint Checkpoint) error {
+	if !w.IsReplicaAvailable() {
+		log.Printf("there's no replica available for worker %v\n", w.LogicalId)
+		return nil
+	}
+	
 	if w.ReplicaClient == nil {
 		client, err := util.DialRPC(w.Replica.WorkerListenAddr)
 		util.CheckErr(err, "Store CP on Replica - could not connect to replica.\n\tError: %v", err)
