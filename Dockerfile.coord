@@ -11,9 +11,10 @@ RUN go mod download
 COPY . .
 
 RUN go build -o bin/coord ./cmd/coord
+RUN go build -o bin/worker ./cmd/worker
 
-# EXPOSE 56837 59141
 EXPOSE 56837
+EXPOSE 9000
 
 CMD [ "./bin/coord" ]
 

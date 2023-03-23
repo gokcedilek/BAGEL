@@ -15,7 +15,7 @@ const QueryClientContext = createContext<QueryClientState>({
   queryClient: {} as CoordClient,
 });
 
-const client = new CoordClient('http://localhost:8080', null, null);
+const client = new CoordClient('http://bagel-envoy.fly.dev:8080', null, null);
 
 export const QueryClientProvider = ({
   children,

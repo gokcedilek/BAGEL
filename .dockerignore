@@ -1,0 +1,46 @@
+# flyctl launch added from .gitignore
+**/.idea
+**/*.db
+**/*.log
+
+**/web-Google.txt
+**/web-Google.csv
+**/bin/*
+
+# **/.env
+
+# flyctl launch added from .idea/.gitignore
+# Default ignored files
+.idea/shelf
+.idea/workspace.xml
+# Editor-based HTTP Client requests
+.idea/httpRequests
+# Datasource local storage ignored files
+.idea/dataSources
+.idea/dataSources.local.xml
+
+# flyctl launch added from client/.gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+client/node_modules
+client/.pnp
+client/**/.pnp.js
+
+# testing
+client/coverage
+
+# production
+client/build
+
+# misc
+client/**/.DS_Store
+client/**/.env.local
+client/**/.env.development.local
+client/**/.env.test.local
+client/**/.env.production.local
+
+client/**/npm-debug.log*
+client/**/yarn-debug.log*
+client/**/yarn-error.log*
+fly.toml

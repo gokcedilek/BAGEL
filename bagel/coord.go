@@ -1168,6 +1168,29 @@ func (c *Coord) DeleteWorker(context *gin.Context) {
 	context.JSONP(http.StatusOK, gin.H{"workerId": workerId})
 }
 
+func CorsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set(
+			"Access-Control-Allow-Origin", "http://bagel.fly.dev",
+		)
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set(
+			"Access-Control-Allow-Headers",
+			"Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With",
+		)
+		c.Writer.Header().Set(
+			"Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT",
+		)
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func AuthMiddleware() gin.HandlerFunc {
 	log.Println("Coord in auth middleware!")
 	if err := godotenv.Load(".env"); err != nil {
@@ -1201,13 +1224,20 @@ func AuthMiddleware() gin.HandlerFunc {
 
 }
 
+func (c *Coord) StatusPage(context *gin.Context) {
+	context.JSONP(http.StatusOK, gin.H{"status": "OK"})
+}
+
 func (c *Coord) listenExternalRequests(externalAPIListenAddr string) {
 	router := gin.Default()
-	router.Use(AuthMiddleware())
-	externalAPI := router.Group("/api")
+	externalAPI := router.Group("/api", AuthMiddleware())
 	{
 		externalAPI.POST("/worker", c.AddWorker)
 		externalAPI.DELETE("/worker/:id", c.DeleteWorker)
+	}
+	statusAPI := router.Group("/status")
+	{
+		statusAPI.GET("/", c.StatusPage)
 	}
 	log.Printf(
 		"listenExternalRequests: Listening on %v\n", externalAPIListenAddr,

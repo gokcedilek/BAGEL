@@ -1,0 +1,54 @@
+# fly.toml file generated for bagel-envoy on 2023-03-12T22:50:35-07:00
+
+app = "bagel-envoy"
+kill_signal = "SIGINT"
+kill_timeout = 5
+primary_region = "sjc"
+processes = []
+
+[env]
+
+[experimental]
+  auto_rollback = true
+
+[[services]]
+  http_checks = []
+  internal_port = 8080
+  processes = ["app"]
+  protocol = "tcp"
+  script_checks = []
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+#   [[services.ports]]
+#     force_https = true
+#     handlers = ["http"]
+#     port = 80
+
+  [[services.ports]]
+    handlers = ["tls"]
+    tls_options = {"alpn" = ["h2"]}
+    port = 443
+
+[[services]]
+  http_checks = []
+  internal_port = 56837
+  processes = ["app"]
+  protocol = "tcp"
+  script_checks = []
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+#   [[services.ports]]
+#     force_https = true
+#     handlers = ["http"]
+#     port = 80
+
+  [[services.ports]]
+    handlers = ["tls"]
+    tls_options = {"alpn" = ["h2"]}
+    port = 443
